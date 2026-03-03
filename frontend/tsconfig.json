@@ -1,0 +1,46 @@
+{
+  "compilerOptions": {
+    "baseUrl": ".",
+    "ignoreDeprecations": "6.0",
+    "jsx": "react-jsx",
+    "moduleResolution": "bundler",
+    "module": "ESNext",
+    "target": "ES2022",
+    "lib": ["DOM", "ES2022"],
+    "noEmit": true,
+    "skipLibCheck": true,
+    "types": ["node", "react", "next"],
+    "typeRoots": ["./types", "./node_modules/@types"],
+    "allowJs": true,
+    "strict": false,
+    "incremental": true,
+    "esModuleInterop": true,
+    "resolveJsonModule": true,
+    "isolatedModules": true,
+    "plugins": [{ "name": "next" }],
+
+    "paths": {
+      "@/*": ["./*"],
+      "@app/*": ["app/*"],
+      "@api/*": ["app/api/*"],
+      "@components/*": ["components/*"],
+      "@ui/*": ["components/ui/*"],
+      "@forms/*": ["components/forms/*"],
+      "@modals/*": ["components/modals/*"],
+      "@hooks/*": ["hooks/*"],
+      "@lib/*": ["lib/*"],
+      "@types/*": ["types/*"],
+      "@public/*": ["public/*"]
+    }
+  },
+  "include": [
+    "next-env.d.ts",
+    "**/*.ts",
+    "**/*.tsx",
+    "app/**/*",
+    "types/**/*",
+    ".next/types/**/*.ts",
+    ".next/dev/types/**/*.ts"
+  ],
+  "exclude": ["node_modules"]
+}

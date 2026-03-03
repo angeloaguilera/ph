@@ -1,0 +1,18 @@
+[
+  {
+    "id": "ba1e2022-e034-44f2-a4d2-070057fff507",
+    "name": "Compra: 31",
+    "sku": null,
+    "price": 0,
+    "quantity": 0,
+    "providerId": null,
+    "sourceRole": null,
+    "companyId": "",
+    "category": null,
+    "specs": {},
+    "photos": [],
+    "meta": {},
+    "createdAt": "2026-02-18T00:20:01.344Z",
+    "updatedAt": "2026-02-18T00:20:01.344Z"
+  }
+]

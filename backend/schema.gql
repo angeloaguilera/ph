@@ -1,0 +1,286 @@
+# ------------------------------------------------------
+# THIS FILE WAS AUTOMATICALLY GENERATED (DO NOT MODIFY)
+# ------------------------------------------------------
+
+type AccountObjectType {
+  _id: ID!
+  allowPosting: Boolean!
+  balance: String!
+  code: String!
+  createdAt: DateTime
+  currency: String
+  isSystemAccount: Boolean
+  level: Float
+  name: String!
+  normalBalance: String!
+  parent: String
+  type: String!
+  updatedAt: DateTime
+}
+
+input AutoMatchInput {
+  statementId: String!
+  toleranceAmount: Float
+  toleranceDays: Float
+}
+
+type BalanceAccountGQL {
+  accountId: String!
+  amount: Float!
+  code: String!
+  name: String!
+}
+
+type BalanceSheetResultGQL {
+  assets: [BalanceAccountGQL!]!
+  currency: String!
+  difference: Float!
+  equity: [BalanceAccountGQL!]!
+  liabilities: [BalanceAccountGQL!]!
+  liabilitiesPlusEquity: Float!
+  snapshotDate: String!
+  totalAssets: Float!
+  totalEquity: Float!
+  totalLiabilities: Float!
+}
+
+type BankStatementGQL {
+  _id: ID!
+  accountName: String!
+  bankAccountId: String!
+  currency: String!
+  lines: [BankStatementLineGQL!]!
+  statementDate: String!
+}
+
+type BankStatementLineGQL {
+  _id: ID!
+  amount: Float!
+  date: String!
+  description: String
+  matched: Boolean
+  matchedJournalEntry: String
+  transactionId: String
+}
+
+input CashFlowTransactionInput {
+  amount: Float!
+  cashAccount: String!
+  counterpartAccount: String
+  currency: String
+  date: String!
+  description: String
+  exchangeRate: Float
+  metadata: JSONObject
+  paymentMethod: String
+  reference: String
+  toAccount: String
+  type: String!
+}
+
+type CashFlowTransactionLineGQL {
+  _id: ID!
+  amount: Float!
+  cashAccount: String
+  counterpartAccount: String
+  currency: String!
+  date: String!
+  description: String
+  journalEntryRef: String
+  paymentMethod: String
+  reference: String
+  status: String
+  toAccount: String
+  type: String!
+}
+
+input CreateAccountInput {
+  allowPosting: Boolean
+  balance: Float
+  code: String!
+  currency: String
+  name: String!
+  normalBalance: String
+  parent: String
+  type: String!
+}
+
+"""
+A date-time string at UTC, such as 2019-12-03T09:54:33Z, compliant with the date-time format.
+"""
+scalar DateTime
+
+input GenerateBalanceSheetInput {
+  currency: String
+  groupBy: String
+  saveReport: Boolean
+  snapshotDate: String!
+}
+
+input GenerateIncomeStatementInput {
+  currency: String
+  endDate: String!
+  groupBy: String
+  saveReport: Boolean
+  startDate: String!
+}
+
+type IncomeLineGQL {
+  accountId: String
+  amount: Float!
+  code: String!
+  name: String!
+}
+
+type IncomeStatementResultGQL {
+  currency: String!
+  endDate: String!
+  expenses: [IncomeLineGQL!]!
+  generatedAt: String!
+  groupBy: String!
+  netIncome: Float!
+  numEntriesConsidered: Float!
+  revenues: [IncomeLineGQL!]!
+  startDate: String!
+  totalExpenses: Float!
+  totalRevenue: Float!
+}
+
+"""
+The `JSON` scalar type represents JSON values as specified by [ECMA-404](http://www.ecma-international.org/publications/files/ECMA-ST/ECMA-404.pdf).
+"""
+scalar JSON
+
+"""
+The `JSONObject` scalar type represents JSON objects as specified by [ECMA-404](http://www.ecma-international.org/publications/files/ECMA-ST/ECMA-404.pdf).
+"""
+scalar JSONObject
+
+input JournalEntryInput {
+  attachments: [String!]
+  currency: String
+  date: DateTime!
+  description: String!
+  exchangeRate: Float
+  fiscalPeriod: String
+  fiscalYear: Float
+  lines: [JournalLineInput!]!
+  metadata: JSONObject
+  reference: String
+}
+
+type JournalEntryObjectType {
+  _id: ID!
+  createdAt: DateTime
+  currency: String!
+  date: DateTime!
+  description: String!
+  exchangeRate: Float
+  fiscalPeriod: String
+  fiscalYear: Float
+  isReversal: Boolean
+  lines: [JournalLineObjectType!]!
+  postedAt: DateTime
+  reference: String
+  reversalOf: String
+  status: String!
+  totalCredit: Float!
+  totalDebit: Float!
+  updatedAt: DateTime
+}
+
+input JournalLineInput {
+  account: String!
+  credit: Float!
+  currency: String
+  debit: Float!
+  description: String
+  exchangeRate: Float
+  taxAmount: Float
+  taxCode: String
+}
+
+type JournalLineObjectType {
+  account: String!
+  credit: Float!
+  currency: String
+  debit: Float!
+  description: String
+  exchangeRate: Float
+  taxAmount: Float
+  taxCode: String
+}
+
+type Mutation {
+  adjustAccountBalance(amount: Float!, id: String!): AccountObjectType!
+  autoMatchGraphQL(input: AutoMatchInput!): String!
+  cancelCashTransaction(id: String!): Boolean!
+  completeCashTransaction(completedBy: String, id: String!): CashFlowTransactionLineGQL!
+  createAccount(input: CreateAccountInput!): AccountObjectType!
+  createCashTransaction(input: CashFlowTransactionInput!): CashFlowTransactionLineGQL!
+  createJournalEntry(input: JournalEntryInput!): JournalEntryObjectType!
+  createVatTransaction(input: VatTransactionInput!): VatTransactionGQL!
+  deleteAccount(id: String!): Boolean!
+  deleteJournalEntry(id: String!): Boolean!
+  generateBalanceSheet(input: GenerateBalanceSheetInput!): BalanceSheetResultGQL!
+  generateIncomeStatement(input: GenerateIncomeStatementInput!): IncomeStatementResultGQL!
+  generateProjection(endDate: String!, frequency: String, startDate: String!): String!
+  generateVatReport(endDate: String!, startDate: String!): String!
+  importStatementGraphQL(content: String!, inputJson: String!): String!
+  postJournalEntry(id: String!, postedBy: String): JournalEntryObjectType!
+  reconcileCashTransaction(id: String!): Boolean!
+  reverseJournalEntry(id: String!, reason: String, reversedBy: String): JournalEntryObjectType!
+  unpostJournalEntry(id: String!): JournalEntryObjectType!
+  updateAccount(id: String!, input: CreateAccountInput!): AccountObjectType!
+  updateJournalEntry(id: String!, input: JournalEntryInput!): JournalEntryObjectType!
+}
+
+type Query {
+  account(idOrCode: String!): AccountObjectType!
+  accountTree: [AccountObjectType!]!
+  accounts: [AccountObjectType!]!
+  cashTransaction(id: String!): CashFlowTransactionLineGQL!
+  cashTransactions(limit: Float, skip: Float): [CashFlowTransactionLineGQL!]!
+  getSavedBalanceSheet(reportId: String!): BalanceSheetResultGQL!
+  getSavedReport(reportId: String!): IncomeStatementResultGQL!
+  getStatement(id: String!): BankStatementGQL!
+  journalEntries(limit: Float, skip: Float): [JournalEntryObjectType!]!
+  journalEntry(id: String!): JournalEntryObjectType!
+  vatTransactions(limit: Float, skip: Float): [VatTransactionGQL!]!
+}
+
+type VatLineGQL {
+  account: String!
+  baseAmount: Float!
+  description: String
+  vatAmount: Float!
+  vatRuleCode: String
+}
+
+input VatLineInput {
+  account: String!
+  baseAmount: Float!
+  description: String
+  vatRuleCode: String
+}
+
+type VatTransactionGQL {
+  _id: ID!
+  date: String!
+  journalEntryRef: String
+  lines: [VatLineGQL!]!
+  reference: String!
+  status: String
+  totalBase: Float!
+  totalVat: Float!
+  type: String!
+}
+
+input VatTransactionInput {
+  currency: String
+  date: String!
+  exchangeRate: Float
+  lines: [VatLineInput!]!
+  reference: String!
+  type: String!
+}

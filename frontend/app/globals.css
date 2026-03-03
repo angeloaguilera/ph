@@ -1,0 +1,14 @@
+/* app/globals.css */
+:root {
+  --bg: #ffffff;
+  --text: #111827;
+}
+
+html, body, #__next {
+  height: 100%;
+  margin: 0;
+  background: var(--bg);
+  color: var(--text);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}

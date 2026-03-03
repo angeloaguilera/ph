@@ -1,0 +1,38 @@
+"use strict";
+var __decorate = (this && this.__decorate) || function (decorators, target, key, desc) {
+    var c = arguments.length, r = c < 3 ? target : desc === null ? desc = Object.getOwnPropertyDescriptor(target, key) : desc, d;
+    if (typeof Reflect === "object" && typeof Reflect.decorate === "function") r = Reflect.decorate(decorators, target, key, desc);
+    else for (var i = decorators.length - 1; i >= 0; i--) if (d = decorators[i]) r = (c < 3 ? d(r) : c > 3 ? d(target, key, r) : d(target, key)) || r;
+    return c > 3 && r && Object.defineProperty(target, key, r), r;
+};
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.VatManagementModule = void 0;
+const common_1 = require("@nestjs/common");
+const mongoose_1 = require("@nestjs/mongoose");
+const vat_management_service_1 = require("./vat-management.service");
+const vat_management_controller_1 = require("./vat-management.controller");
+const vat_management_resolver_1 = require("./vat-management.resolver");
+const vat_rule_schema_1 = require("./shemas/vat-rule.schema");
+const vat_transaction_schema_1 = require("./shemas/vat-transaction.schema");
+const vat_report_schema_1 = require("./shemas/vat-report.schema");
+const journal_entry_schema_1 = require("../journal-entries/schemas/journal-entry.schema");
+const account_schema_1 = require("../chart-of-accounts/schemas/account.schema");
+let VatManagementModule = class VatManagementModule {
+};
+exports.VatManagementModule = VatManagementModule;
+exports.VatManagementModule = VatManagementModule = __decorate([
+    (0, common_1.Module)({
+        imports: [
+            mongoose_1.MongooseModule.forFeature([
+                { name: vat_rule_schema_1.VatRule.name, schema: vat_rule_schema_1.VatRuleSchema },
+                { name: vat_transaction_schema_1.VatTransaction.name, schema: vat_transaction_schema_1.VatTransactionSchema },
+                { name: vat_report_schema_1.VatReport.name, schema: vat_report_schema_1.VatReportSchema },
+                { name: journal_entry_schema_1.JournalEntry.name, schema: journal_entry_schema_1.JournalEntrySchema },
+                { name: account_schema_1.Account.name, schema: account_schema_1.AccountSchema },
+            ]),
+        ],
+        providers: [vat_management_service_1.VatManagementService, vat_management_resolver_1.VatManagementResolver],
+        controllers: [vat_management_controller_1.VatManagementController],
+        exports: [vat_management_service_1.VatManagementService],
+    })
+], VatManagementModule);

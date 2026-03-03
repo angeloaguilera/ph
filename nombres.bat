@@ -1,0 +1,1 @@
+tree /f /a %1 >%USERPROFILE%/Documents/archivos.txt

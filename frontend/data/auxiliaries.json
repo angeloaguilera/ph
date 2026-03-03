@@ -1,0 +1,53 @@
+[
+  {
+    "id": "c82b41b1-fab6-4728-993a-fe2ff370bf59",
+    "role": "CLIENTE",
+    "partyType": "NATURAL",
+    "name": "32 313",
+    "phone": "",
+    "email": "131",
+    "address": "331",
+    "city": "31",
+    "country": "31",
+    "rif": "1",
+    "companyId": "c435bc95-d6fe-4388-8b91-dad4ec7eda98",
+    "nit": null,
+    "meta": {},
+    "createdAt": "2026-02-18T00:23:53.351Z",
+    "updatedAt": "2026-02-18T00:23:53.351Z"
+  },
+  {
+    "id": "be47dc7c-27a2-4b87-b6b0-0c5c663f1be2",
+    "role": "PROVEEDOR",
+    "partyType": "NATURAL",
+    "name": "231 31",
+    "phone": "13",
+    "email": "311",
+    "address": "3",
+    "city": "13",
+    "country": "13",
+    "rif": "3",
+    "companyId": "dbf4284b-9b5d-447e-8827-f30d70697c92",
+    "nit": null,
+    "meta": {},
+    "createdAt": "2026-02-18T00:11:11.713Z",
+    "updatedAt": "2026-02-18T00:11:11.713Z"
+  },
+  {
+    "id": "a23eda29-3aa7-44d3-a93f-7abdb6a809c6",
+    "role": "PROVEEDOR",
+    "partyType": "NATURAL",
+    "name": "213 31",
+    "phone": "1",
+    "email": "131",
+    "address": "2131",
+    "city": "23",
+    "country": "",
+    "rif": "",
+    "companyId": "d21ef373-e6bc-4844-b70d-8201505032cd",
+    "nit": null,
+    "meta": {},
+    "createdAt": "2026-02-18T00:09:45.302Z",
+    "updatedAt": "2026-02-18T00:09:45.302Z"
+  }
+]
