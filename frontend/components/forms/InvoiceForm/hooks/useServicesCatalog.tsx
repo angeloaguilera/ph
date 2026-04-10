@@ -1,20 +1,26 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
+import { SERVICES_API, CONDO_SERVICE_API } from "./constants";
 
 /* ---- Types ---- */
 export interface CatalogService {
   id: string;
-  masterId?: string; // se mantiene el campo por compatibilidad, pero ya no se trata como "master"
+  masterId?: string; // se mantiene el campo por compatibilidad
   companyId?: string;
   name?: string;
   description?: string;
+  type?: string;
+  role?: string;
+  ownerType?: string;
+  partyType?: string;
+  domain?: "general" | "condo";
+  meta?: Record<string, any>;
   [key: string]: any;
 }
 
-/* ---- Consts ---- */
-const LOCAL_SERV_KEY = "local_services_catalog_v1";
-const SERVICES_API = "/api/administration/services"; // ajusta si tu ruta es distinta
+/* ---- Local-only key (inline, no export) ---- */
+const LOCAL_SERV_KEY_INLINE = "admin_services_v1";
 
 /* ---- Utilities ---- */
 function genId(): string {
@@ -23,10 +29,84 @@ function genId(): string {
     if (win?.crypto && "randomUUID" in win.crypto) {
       return win.crypto.randomUUID();
     }
-  } catch (e) {
+  } catch {
     // ignore
   }
   return `${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
+}
+
+function toText(value: unknown): string {
+  return String(value ?? "").trim();
+}
+
+function toLowerText(value: unknown): string {
+  return toText(value).toLowerCase();
+}
+
+function isTrueFlag(value: any): boolean {
+  return value === true || value === "true" || value === 1 || value === "1";
+}
+
+function hasOwnerOrContractorMarker(source: any): boolean {
+  if (!source) return false;
+
+  // Solo valores explícitos en true
+  const directFlags = [
+    source?.isPropietario,
+    source?.isProveedorContratista,
+    source?.propietario,
+    source?.contratista,
+    source?.esPropietario,
+    source?.esContratista,
+    source?.hasPropietario,
+    source?.hasContratista,
+  ];
+
+  if (directFlags.some(isTrueFlag)) return true;
+
+  // Arrays/listas o items con etiquetas explícitas
+  const candidateLists: any[] = [
+    source?.checklist,
+    source?.meta?.checklist,
+    source?.meta?.items,
+    source?.items,
+    source?.tags,
+  ];
+
+  for (const list of candidateLists) {
+    const arr = Array.isArray(list) ? list : list ? [list] : [];
+    for (const item of arr) {
+      const text =
+        typeof item === "string"
+          ? toLowerText(item)
+          : toLowerText(
+              item?.label ??
+                item?.name ??
+                item?.title ??
+                item?.value ??
+                item?.text ??
+                JSON.stringify(item)
+            );
+
+      if (
+        text.includes("propiet") ||
+        text.includes("contrat") ||
+        text.includes("dueñ") ||
+        text.includes("dueño")
+      ) {
+        return true;
+      }
+
+      if (
+        item?.done === true &&
+        (text.includes("propiet") || text.includes("contrat"))
+      ) {
+        return true;
+      }
+    }
+  }
+
+  return false;
 }
 
 async function apiPostJson(
@@ -46,23 +126,43 @@ async function apiPostJson(
   }
 }
 
+function isCondoRecord(record?: any): boolean {
+  if (!record) return false;
+
+  const domain = String(record?.domain ?? record?.meta?.domain ?? "").toLowerCase();
+  if (domain !== "condo") return false;
+
+  // Importante:
+  // Aunque domain sea "condo", solo va a CONDO_SERVICE_API si hay señal real
+  // de propietario/contratista en true.
+  return hasOwnerOrContractorMarker(record);
+}
+
+function getTransaction(record?: any): string {
+  return String(
+    record?.transaction ??
+      record?.meta?.transactionType ??
+      record?.meta?.transaction ??
+      ""
+  ).trim();
+}
+
+function pickBaseApi(record?: any): string {
+  return isCondoRecord(record) ? CONDO_SERVICE_API : SERVICES_API;
+}
+
 /* ---- Hook ---- */
 export default function useServicesCatalog() {
   const [servicesCatalog, setServicesCatalog] = useState<CatalogService[]>([]);
 
   const saveServicesToLocal = (arr: CatalogService[]) => {
     try {
-      localStorage.setItem(LOCAL_SERV_KEY, JSON.stringify(arr));
-    } catch (err) {
+      localStorage.setItem(LOCAL_SERV_KEY_INLINE, JSON.stringify(arr));
+    } catch {
       // ignore storage errors
     }
   };
 
-  /**
-   * applyServerServices
-   * - Reemplaza la lista local por la canonical que venga del servidor.
-   * - El servidor puede devolver { services: [...] } o un array directo.
-   */
   const applyServerServices = useCallback((arr: any[]) => {
     const canonical = Array.isArray(arr) ? arr : [];
     const normalized = canonical.map((s: any) => ({
@@ -71,10 +171,11 @@ export default function useServicesCatalog() {
       masterId: s.masterId ? String(s.masterId) : s.masterId ?? undefined,
       companyId: s.companyId ? String(s.companyId) : s.companyId ?? "",
     }));
+
     try {
       setServicesCatalog(normalized);
       saveServicesToLocal(normalized);
-    } catch (e) {
+    } catch {
       // ignore
     }
   }, []);
@@ -84,18 +185,22 @@ export default function useServicesCatalog() {
       const res = await fetch(SERVICES_API);
       if (res.ok) {
         const json = await res.json().catch(() => null);
-        const servs = Array.isArray(json?.services) ? json.services : Array.isArray(json) ? json : [];
+        const servs = Array.isArray(json?.services)
+          ? json.services
+          : Array.isArray(json)
+            ? json
+            : [];
         applyServerServices(servs);
         return;
       }
-      // fallback a localStorage si la respuesta no es ok
-      const raw = localStorage.getItem(LOCAL_SERV_KEY);
+
+      const raw = localStorage.getItem(LOCAL_SERV_KEY_INLINE);
       const servs = raw ? JSON.parse(raw) : [];
       setServicesCatalog(Array.isArray(servs) ? servs : []);
     } catch (err) {
       console.error("[useServicesCatalog] fetchServices error", err);
       try {
-        const raw = localStorage.getItem(LOCAL_SERV_KEY);
+        const raw = localStorage.getItem(LOCAL_SERV_KEY_INLINE);
         const servs = raw ? JSON.parse(raw) : [];
         setServicesCatalog(Array.isArray(servs) ? servs : []);
       } catch (err2) {
@@ -109,25 +214,22 @@ export default function useServicesCatalog() {
     fetchServices();
   }, [fetchServices]);
 
-  /**
-   * mergeVisibleServices
-   * - Con la eliminación de "masters" esta función simplemente filtra
-   *   los servicios por companyId (si se provee) o devuelve todos.
-   */
   const mergeVisibleServices = useCallback(
     (companyId?: string) => {
       if (!companyId || String(companyId).trim() === "") return servicesCatalog;
-      return servicesCatalog.filter((s) => String(s.companyId ?? "") === String(companyId));
+      return servicesCatalog.filter(
+        (s) => String(s.companyId ?? "") === String(companyId)
+      );
     },
     [servicesCatalog]
   );
 
-  /* ---- helpers locales (upsert solo en servicesCatalog) ---- */
   const upsertServiceLocal = useCallback((svc: CatalogService) => {
     setServicesCatalog((prev) => {
       const arr = Array.isArray(prev) ? [...prev] : [];
       const id = String(svc.id ?? genId());
       const idx = arr.findIndex((x) => String(x.id) === id);
+
       const normalized: CatalogService = {
         ...svc,
         id,
@@ -135,22 +237,29 @@ export default function useServicesCatalog() {
         companyId: svc.companyId ? String(svc.companyId) : svc.companyId ?? "",
         updatedAt: new Date().toISOString(),
       };
+
       if (idx >= 0) {
         arr[idx] = { ...arr[idx], ...normalized };
       } else {
         arr.unshift(normalized);
       }
-      try { saveServicesToLocal(arr); } catch (e) {}
+
+      try {
+        saveServicesToLocal(arr);
+      } catch {}
       return arr;
     });
   }, []);
 
-  /* ---- CRUD servicios (sin concepto de master) ---- */
-
   const createCatalogService = useCallback(
     async (rec: Partial<CatalogService>) => {
-      const explicitCompanyId = rec?.companyId && String(rec.companyId).trim() ? String(rec.companyId).trim() : "";
+      const explicitCompanyId =
+        rec?.companyId && String(rec.companyId).trim()
+          ? String(rec.companyId).trim()
+          : "";
+
       const masterId = rec?.masterId ? String(rec.masterId) : undefined;
+
       const incoming: CatalogService = {
         ...(rec as CatalogService),
         id: rec?.id ? String(rec.id) : undefined,
@@ -163,39 +272,55 @@ export default function useServicesCatalog() {
       const tempId = `temp-${genId()}`;
       const optimistic: CatalogService = { ...incoming, id: tempId };
 
-      // guardado optimista local
       setServicesCatalog((prev) => {
         const prevArr = Array.isArray(prev) ? [...prev] : [];
         const exists = prevArr.some((p) => p.id === tempId);
         if (exists) return prevArr;
         const next = [optimistic, ...prevArr];
-        try { saveServicesToLocal(next); } catch (e) {}
+        try {
+          saveServicesToLocal(next);
+        } catch {}
         return next;
       });
 
-      try {
-        const apiRes = await apiPostJson(SERVICES_API, { action: "upsert", service: incoming });
+      const chosenBaseApi = pickBaseApi(incoming);
+      const transaction = getTransaction(incoming);
 
-        // servidor devuelve lista completa -> reemplazo total
+      try {
+        const apiRes = await apiPostJson(chosenBaseApi, {
+          action: "upsert",
+          transaction,
+          data: {
+            ...incoming,
+            transaction,
+          },
+        });
+
         if (apiRes.ok && Array.isArray(apiRes.json?.services)) {
           applyServerServices(apiRes.json.services);
-          const created = (apiRes.json.services as any[]).find((s) => String(s.id) === String(incoming.id) || String(s.masterId ?? s.id) === String(incoming.masterId ?? incoming.id));
+          const created =
+            (apiRes.json.services as any[]).find(
+              (s) =>
+                String(s.id) === String(incoming.id) ||
+                String(s.masterId ?? s.id) ===
+                  String(incoming.masterId ?? incoming.id)
+            ) ?? null;
           return created ?? apiRes.json.service ?? null;
         }
 
-        // servidor devuelve el registro creado/actualizado
-        if (apiRes.ok && apiRes.json?.service) {
-          const svc = apiRes.json.service as CatalogService;
+        if (apiRes.ok && apiRes.json?.item) {
+          const svc = apiRes.json.item as CatalogService;
           upsertServiceLocal(svc);
 
-          // si el servidor asignó un id distinto al temp, reemplazamos el optimista
           if (svc.id && svc.id !== tempId) {
             setServicesCatalog((p) => {
               const arr = Array.isArray(p) ? [...p] : [];
               const idx = arr.findIndex((x) => x.id === tempId);
               if (idx >= 0) {
                 arr[idx] = { ...arr[idx], ...svc, id: svc.id };
-                try { saveServicesToLocal(arr); } catch (e) {}
+                try {
+                  saveServicesToLocal(arr);
+                } catch {}
                 return arr;
               }
               return arr;
@@ -204,10 +329,12 @@ export default function useServicesCatalog() {
           return svc;
         }
 
-        // fallback: devolver el optimista
         return optimistic;
       } catch (e) {
-        console.warn("[useServicesCatalog] createCatalogService - server upsert failed", e);
+        console.warn(
+          "[useServicesCatalog] createCatalogService - server upsert failed",
+          e
+        );
         return optimistic;
       }
     },
@@ -222,24 +349,48 @@ export default function useServicesCatalog() {
             ? { ...x, ...patch, updatedAt: new Date().toISOString() }
             : x
         );
-        try { saveServicesToLocal(next); } catch (e) {}
+        try {
+          saveServicesToLocal(next);
+        } catch {}
         return next;
       });
 
       try {
-        const apiRes = await apiPostJson(SERVICES_API, { action: "upsert", service: { id, ...patch } });
+        const localRaw = localStorage.getItem(LOCAL_SERV_KEY_INLINE);
+        const localArr = localRaw ? JSON.parse(localRaw) : [];
+        const found =
+          (Array.isArray(localArr) ? localArr : []).find(
+            (x) => String(x.id) === String(id) || String(x.masterId) === String(id)
+          ) ?? null;
+
+        const combined = found ? { ...found, ...patch, id } : { id, ...patch };
+        const chosenBaseApi = pickBaseApi(combined);
+        const transaction = getTransaction(combined);
+
+        const apiRes = await apiPostJson(chosenBaseApi, {
+          action: "upsert",
+          transaction,
+          data: {
+            ...combined,
+            id,
+            transaction,
+          },
+        });
 
         if (apiRes.ok && Array.isArray(apiRes.json?.services)) {
           applyServerServices(apiRes.json.services);
           return;
         }
 
-        if (apiRes.ok && apiRes.json?.service) {
-          const svc = apiRes.json.service as CatalogService;
+        if (apiRes.ok && apiRes.json?.item) {
+          const svc = apiRes.json.item as CatalogService;
           upsertServiceLocal(svc);
         }
       } catch (e) {
-        console.warn("[useServicesCatalog] updateCatalogService - server upsert failed", e);
+        console.warn(
+          "[useServicesCatalog] updateCatalogService - server upsert failed",
+          e
+        );
       }
     },
     [applyServerServices, upsertServiceLocal]
@@ -249,18 +400,31 @@ export default function useServicesCatalog() {
     async (id: string) => {
       setServicesCatalog((p) => {
         const next = (p || []).filter((x) => x.id !== id && x.masterId !== id);
-        try { saveServicesToLocal(next); } catch (e) {}
+        try {
+          saveServicesToLocal(next);
+        } catch {}
         return next;
       });
 
       try {
-        const apiRes = await apiPostJson(SERVICES_API, { action: "delete", id });
+        const localRaw = localStorage.getItem(LOCAL_SERV_KEY_INLINE);
+        const localArr = localRaw ? JSON.parse(localRaw) : [];
+        const found = (Array.isArray(localArr) ? localArr : []).find(
+          (x) => x.id === id || x.masterId === id
+        );
+
+        const chosenBaseApi = pickBaseApi(found);
+
+        const apiRes = await apiPostJson(chosenBaseApi, { action: "delete", id });
 
         if (apiRes.ok && Array.isArray(apiRes.json?.services)) {
           applyServerServices(apiRes.json.services);
         }
       } catch (e) {
-        console.warn("[useServicesCatalog] removeCatalogService - server delete failed", e);
+        console.warn(
+          "[useServicesCatalog] removeCatalogService - server delete failed",
+          e
+        );
       }
     },
     [applyServerServices]
@@ -268,7 +432,8 @@ export default function useServicesCatalog() {
 
   const cloneCatalogService = useCallback(
     async (id: string) => {
-      const found = servicesCatalog.find((x) => x.id === id || x.masterId === id);
+      const found =
+        servicesCatalog.find((x) => x.id === id || x.masterId === id) ?? null;
       if (!found) return;
 
       const clone: CatalogService = {
@@ -281,23 +446,40 @@ export default function useServicesCatalog() {
 
       setServicesCatalog((p) => {
         const prevArr = Array.isArray(p) ? [...p] : [];
-        const exists = prevArr.some((x) => x.name === clone.name && String(x.masterId ?? x.id) === String(clone.masterId ?? clone.id));
+        const exists = prevArr.some(
+          (x) =>
+            x.name === clone.name &&
+            String(x.masterId ?? x.id) === String(clone.masterId ?? clone.id)
+        );
         if (exists) return prevArr;
         const next = [clone, ...prevArr];
-        try { saveServicesToLocal(next); } catch (e) {}
+        try {
+          saveServicesToLocal(next);
+        } catch {}
         return next;
       });
 
       try {
-        const apiRes = await apiPostJson(SERVICES_API, { action: "upsert", service: { ...clone, id: undefined } });
+        const chosenBaseApi = pickBaseApi(found);
+        const transaction = getTransaction(found);
+
+        const apiRes = await apiPostJson(chosenBaseApi, {
+          action: "upsert",
+          transaction,
+          data: {
+            ...clone,
+            id: undefined,
+            transaction,
+          },
+        });
 
         if (apiRes.ok && Array.isArray(apiRes.json?.services)) {
           applyServerServices(apiRes.json.services);
           return;
         }
 
-        if (apiRes.ok && apiRes.json?.service) {
-          const svc = apiRes.json.service as CatalogService;
+        if (apiRes.ok && apiRes.json?.item) {
+          const svc = apiRes.json.item as CatalogService;
           upsertServiceLocal(svc);
 
           setServicesCatalog((p) => {
@@ -305,14 +487,19 @@ export default function useServicesCatalog() {
             const idx = arr.findIndex((x) => x.id === clone.id);
             if (idx >= 0) {
               arr[idx] = { ...arr[idx], ...svc, id: svc.id };
-              try { saveServicesToLocal(arr); } catch (e) {}
+              try {
+                saveServicesToLocal(arr);
+              } catch {}
               return arr;
             }
             return arr;
           });
         }
       } catch (e) {
-        console.warn("[useServicesCatalog] cloneCatalogService - server upsert failed", e);
+        console.warn(
+          "[useServicesCatalog] cloneCatalogService - server upsert failed",
+          e
+        );
       }
     },
     [servicesCatalog, applyServerServices, upsertServiceLocal]
@@ -327,6 +514,6 @@ export default function useServicesCatalog() {
     cloneCatalogService,
     fetchServices,
     mergeVisibleServices,
-    applyServerServices, // expuesto por si quieres forzar replace manualmente
+    applyServerServices,
   };
 }

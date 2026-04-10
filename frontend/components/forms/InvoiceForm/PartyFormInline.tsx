@@ -1,10 +1,40 @@
-// components/forms/InvoiceForm/PartyFormInline.tsx
 "use client";
-import React, { useEffect } from "react";
-import type { PartyRecord } from "../../../types/invoice";
 
-const EMPTY_PARTY_DRAFT = {
-  partyType: "NATURAL" as "NATURAL" | "JURIDICA",
+import React, { useEffect, useMemo, useRef } from "react";
+import type { PartyRecord } from "../../../types/invoice";
+import SeniatRifConsult from "./SeniatRifConsult";
+
+type PartyType = "NATURAL" | "JURIDICA";
+
+type PartyDraft = {
+  partyType: PartyType;
+  firstName: string;
+  lastName: string;
+  companyName: string;
+  rif: string;
+  nit: string;
+  phone: string;
+  email: string;
+  address: string;
+  city: string;
+  state: string;
+  country: string;
+  companyId: string;
+  photoDataUrl?: string;
+  isPropietario: boolean;
+  isProveedorContratista: boolean;
+  needsManualReview: boolean;
+  rifMatchedLine: string;
+  activityEconomic: string;
+  condition: string;
+  retentionNote: string;
+  rawText: string;
+  defaultTargets: string[];
+  checklist: any[];
+};
+
+const EMPTY_PARTY_DRAFT: PartyDraft = {
+  partyType: "NATURAL",
   firstName: "",
   lastName: "",
   companyName: "",
@@ -17,22 +47,156 @@ const EMPTY_PARTY_DRAFT = {
   state: "",
   country: "",
   companyId: "",
-  photoDataUrl: undefined as string | undefined,
+  photoDataUrl: undefined,
+  isPropietario: false,
+  isProveedorContratista: false,
+  needsManualReview: false,
+  rifMatchedLine: "",
+  activityEconomic: "",
+  condition: "",
+  retentionNote: "",
+  rawText: "",
+  defaultTargets: [],
+  checklist: [],
 };
 
 function generateCompanyId() {
-  // Usa crypto.randomUUID() si está disponible en el navegador,
-  // si no, crear fallback simple (timestamp + random).
   try {
-    // @ts-ignore - crypto may not exist in some test environments
     if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
-      // @ts-ignore
       return crypto.randomUUID();
     }
-  } catch (e) {
-    // ignore
-  }
+  } catch {}
   return `cmp-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+}
+
+function generateChecklistId() {
+  try {
+    if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
+      return crypto.randomUUID();
+    }
+  } catch {}
+  return `c-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+}
+
+function normalizeChecklist(raw: any): any[] {
+  if (!raw) return [];
+  if (Array.isArray(raw)) return raw;
+  try {
+    const parsed = JSON.parse(String(raw));
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
+}
+
+function normalizeStringArray(raw: any): string[] {
+  if (!raw) return [];
+  if (Array.isArray(raw)) return raw.map((v) => String(v)).filter(Boolean);
+  try {
+    const parsed = JSON.parse(String(raw));
+    return Array.isArray(parsed) ? parsed.map((v) => String(v)).filter(Boolean) : [];
+  } catch {
+    return [];
+  }
+}
+
+function isTruthyLike(v: any) {
+  return v === true || v === "1" || v === 1 || v === "true";
+}
+
+function normalizeComparableText(value: string) {
+  return String(value ?? "")
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[^a-z0-9]/g, "");
+}
+
+function stripDuplicateParenthetical(input: string) {
+  const text = String(input ?? "").trim().replace(/\s+/g, " ");
+  if (!text) return "";
+
+  const match = text.match(/^(.*?)(?:\s*\(([^()]*)\)\s*)$/);
+  if (!match) return text;
+
+  const base = match[1].trim();
+  const inner = String(match[2] ?? "").trim();
+
+  if (!base || !inner) return text;
+
+  const baseNorm = normalizeComparableText(base.replace(/[.,;:]+$/g, ""));
+  const innerNorm = normalizeComparableText(inner.replace(/[.,;:]+$/g, ""));
+
+  if (baseNorm && baseNorm === innerNorm) {
+    return base;
+  }
+
+  return text;
+}
+
+function splitNaturalName(fullName: string) {
+  const cleaned = stripDuplicateParenthetical(fullName);
+
+  const tokens = String(cleaned)
+    .trim()
+    .split(/\s+/)
+    .filter(Boolean);
+
+  if (tokens.length === 0) {
+    return { firstName: "", lastName: "" };
+  }
+
+  if (tokens.length === 1) {
+    return { firstName: tokens[0], lastName: "" };
+  }
+
+  if (tokens.length === 2) {
+    return { firstName: tokens[0], lastName: tokens[1] };
+  }
+
+  if (tokens.length === 3) {
+    return { firstName: tokens[0], lastName: tokens.slice(1).join(" ") };
+  }
+
+  return {
+    firstName: tokens.slice(0, 2).join(" "),
+    lastName: tokens.slice(2).join(" "),
+  };
+}
+
+function parseRifMatchedLine(input: string) {
+  const text = String(input ?? "").trim();
+  if (!text) return null;
+
+  const lines = text
+    .split(/\r?\n/)
+    .map((l) => l.trim())
+    .filter(Boolean);
+
+  const candidates = lines.length > 0 ? lines : [text];
+
+  for (const line of candidates) {
+    const normalized = line.replace(/\s+/g, " ").trim();
+
+    const match = normalized.match(/^([A-Z]\s*[-]?\s*\d[\d-]*)\s+(.+)$/i);
+    if (!match) continue;
+
+    const rif = match[1].replace(/\s+/g, "").toUpperCase().trim();
+    const rawName = match[2].trim();
+    const cleanedName = stripDuplicateParenthetical(rawName);
+
+    const { firstName, lastName } = splitNaturalName(cleanedName);
+
+    return {
+      rif,
+      firstName,
+      lastName,
+      fullName: cleanedName,
+      companyName: cleanedName,
+    };
+  }
+
+  return null;
 }
 
 export default function PartyFormInline({
@@ -59,73 +223,198 @@ export default function PartyFormInline({
   onEditSelected: () => void;
   showNewPartyForm: boolean;
   newPartyDraft: any;
-  setNewPartyDraft: (v: any) => void;
+  setNewPartyDraft: React.Dispatch<React.SetStateAction<any>>;
   partyPhotoPreview?: string;
   onPhotoChange: (files: FileList | null) => void;
   onSaveDraft: (selectAfterSave?: boolean) => void;
   onCancelForm: () => void;
   onRemoveParty: (id: string) => void;
 }) {
-  const safeDraft = {
-    ...EMPTY_PARTY_DRAFT,
-    ...(newPartyDraft ?? {}),
-  };
+  const lastAutofillKeyRef = useRef<string>("");
 
-  const partyType = safeDraft.partyType;
+  const safeDraft = useMemo<PartyDraft>(() => {
+    const checklist = normalizeChecklist(newPartyDraft?.checklist);
+    const defaultTargets = normalizeStringArray(newPartyDraft?.defaultTargets);
 
-  // Generar companyId automáticamente cuando el formulario se abre,
-  // y también asegurarnos de generarlo si el usuario hace click en + Nuevo.
+    return {
+      ...EMPTY_PARTY_DRAFT,
+      ...(newPartyDraft ?? {}),
+      isPropietario: isTruthyLike(newPartyDraft?.isPropietario),
+      isProveedorContratista: isTruthyLike(newPartyDraft?.isProveedorContratista),
+      needsManualReview: isTruthyLike(newPartyDraft?.needsManualReview),
+      defaultTargets,
+      checklist,
+    };
+  }, [newPartyDraft]);
+
+  const partyType = safeDraft.partyType as PartyType;
+
   useEffect(() => {
-    if (!showNewPartyForm) return;
+    if (!showNewPartyForm) {
+      lastAutofillKeyRef.current = "";
+      return;
+    }
 
-    // Si por alguna razón el draft actual no tiene companyId, generarlo.
     setNewPartyDraft((d: any) => {
-      const base = { ...EMPTY_PARTY_DRAFT, ...(d ?? {}) };
-      if (base.companyId && base.companyId.toString().trim().length > 0) {
-        // ya tiene companyId -> no sobrescribir
-        return base;
+      const base = { ...(d ?? {}) };
+
+      base.checklist = normalizeChecklist(base.checklist);
+      base.defaultTargets = normalizeStringArray(base.defaultTargets);
+
+      const propietarioItem = base.checklist.find(
+        (it: any) => String(it.label).toLowerCase() === "propietario"
+      );
+      const contratistaItem = base.checklist.find(
+        (it: any) => String(it.label).toLowerCase() === "contratista"
+      );
+
+      base.isPropietario = propietarioItem ? !!propietarioItem.done : !!base.isPropietario;
+      base.isProveedorContratista = contratistaItem ? !!contratistaItem.done : !!base.isProveedorContratista;
+      base.needsManualReview = !!base.needsManualReview;
+
+      if (
+        (base.isPropietario || base.isProveedorContratista) &&
+        (!Array.isArray(base.defaultTargets) || base.defaultTargets.length === 0)
+      ) {
+        base.defaultTargets = ["SERVICIOS", "PRODUCTOS", "INMUEBLES"];
       }
-      const id = generateCompanyId();
-      return { ...base, companyId: id };
+
+      if (!base.companyId || !String(base.companyId).trim()) {
+        base.companyId = generateCompanyId();
+      }
+
+      return base;
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [showNewPartyForm]);
 
-  // Handler local para abrir nuevo: aseguramos que el draft que se abre ya
-  // tenga companyId (evita condiciones de carrera si el usuario guarda rápido).
+  useEffect(() => {
+    if (!showNewPartyForm) return;
+
+    const source = String(safeDraft.rifMatchedLine || safeDraft.rawText || "").trim();
+    if (!source) return;
+
+    const autofillKey = `${partyType}::${source}`;
+    if (lastAutofillKeyRef.current === autofillKey) return;
+
+    const parsed = parseRifMatchedLine(source);
+    if (!parsed) return;
+
+    lastAutofillKeyRef.current = autofillKey;
+
+    setNewPartyDraft((d: any) => {
+      const base = { ...(d ?? {}) };
+
+      base.rif = parsed.rif || base.rif || "";
+
+      if (partyType === "JURIDICA") {
+        base.companyName = parsed.companyName || base.companyName || "";
+        base.firstName = "";
+        base.lastName = "";
+      } else {
+        const names = splitNaturalName(parsed.fullName || "");
+        base.firstName = names.firstName || base.firstName || "";
+        base.lastName = names.lastName || base.lastName || "";
+        base.companyName = "";
+      }
+
+      return base;
+    });
+  }, [
+    showNewPartyForm,
+    partyType,
+    safeDraft.rifMatchedLine,
+    safeDraft.rawText,
+    setNewPartyDraft,
+  ]);
+
   const handleOpenNew = () => {
     const id = generateCompanyId();
-    // Seteamos inmediatamente el draft con companyId antes de abrir
-    setNewPartyDraft((d: any) => {
-      const base = { ...EMPTY_PARTY_DRAFT, ...(d ?? {}) };
-      return { ...base, companyId: base.companyId && base.companyId.toString().trim().length ? base.companyId : id };
-    });
-    // Luego llamamos al callback que abre el formulario en el padre
+    lastAutofillKeyRef.current = "";
+    setNewPartyDraft(() => ({ ...EMPTY_PARTY_DRAFT, companyId: id }));
     onOpenNew();
   };
 
-  // Handler local para guardar: nos aseguramos que exista companyId en el draft
-  // y llamamos al onSaveDraft. Usamos setTimeout 0 para dar oportunidad a React
-  // de aplicar la actualización del estado antes de que el padre lea newPartyDraft.
-  // Esto evita la carrera donde onSaveDraft en el padre lee un draft sin companyId.
   const handleSaveDraft = (selectAfterSave = true) => {
-    if (safeDraft.companyId && safeDraft.companyId.toString().trim().length > 0) {
-      // ya tiene companyId -> guardar de inmediato
+    if (safeDraft.companyId && String(safeDraft.companyId).trim().length > 0) {
       onSaveDraft(selectAfterSave);
       return;
     }
+
     const id = generateCompanyId();
     setNewPartyDraft((d: any) => {
       const base = { ...EMPTY_PARTY_DRAFT, ...(d ?? {}) };
       return { ...base, companyId: id };
     });
-    // Llamada en siguiente macrotarea para dar tiempo a que el estado padre se actualice.
-    // Esto es una práctica aceptada para garantizar que el setter se aplique
-    // antes de leerlo en la función onSaveDraft del componente padre.
+
     setTimeout(() => {
       onSaveDraft(selectAfterSave);
     }, 0);
   };
+
+  function upsertChecklist(base: any, label: string, done: boolean) {
+    base.checklist = normalizeChecklist(base.checklist);
+    const idx = base.checklist.findIndex((it: any) => String(it.label).toLowerCase() === label.toLowerCase());
+    const now = new Date().toISOString();
+
+    if (idx >= 0) {
+      base.checklist[idx] = { ...base.checklist[idx], done, updatedAt: now };
+    } else {
+      base.checklist = [
+        ...base.checklist,
+        {
+          id: generateChecklistId(),
+          label,
+          done,
+          meta: {},
+          createdAt: now,
+          updatedAt: now,
+        },
+      ];
+    }
+
+    return base.checklist;
+  }
+
+  const setPropietario = (checked: boolean) => {
+    setNewPartyDraft((d: any) => {
+      const base = { ...(d ?? {}) };
+      base.checklist = normalizeChecklist(base.checklist);
+
+      base.isPropietario = checked;
+      if (checked) base.isProveedorContratista = false;
+
+      upsertChecklist(base, "propietario", checked);
+      base.defaultTargets = checked ? ["SERVICIOS", "PRODUCTOS", "INMUEBLES"] : [];
+
+      return base;
+    });
+  };
+
+  const setProveedorContratista = (checked: boolean) => {
+    setNewPartyDraft((d: any) => {
+      const base = { ...(d ?? {}) };
+      base.checklist = normalizeChecklist(base.checklist);
+
+      base.isProveedorContratista = checked;
+      if (checked) base.isPropietario = false;
+
+      upsertChecklist(base, "contratista", checked);
+      base.defaultTargets = checked ? ["SERVICIOS", "PRODUCTOS", "INMUEBLES"] : [];
+
+      return base;
+    });
+  };
+
+  const showPropietarioCheckbox =
+    currentRole === "CLIENTE" ||
+    safeDraft.isPropietario === true ||
+    safeDraft.checklist.some((it: any) => String(it.label).toLowerCase() === "propietario");
+
+  const showProveedorCheckbox =
+    currentRole === "PROVEEDOR" ||
+    safeDraft.isProveedorContratista === true ||
+    safeDraft.checklist.some((it: any) => String(it.label).toLowerCase() === "contratista");
 
   return (
     <div>
@@ -133,6 +422,7 @@ export default function PartyFormInline({
         <label className="block text-sm font-medium mb-1">
           Seleccionar {currentRole === "CLIENTE" ? "cliente" : "proveedor"}
         </label>
+
         <div className="flex gap-2">
           <select
             className="flex-1 border rounded px-2 py-1"
@@ -157,7 +447,6 @@ export default function PartyFormInline({
                 Editar
               </button>
 
-              {/* Botón Eliminar: solo visible si hay una selección */}
               <button
                 type="button"
                 onClick={() => onRemoveParty(selectedPartyId)}
@@ -179,14 +468,25 @@ export default function PartyFormInline({
               <select
                 className="w-full border rounded px-2 py-1"
                 value={partyType}
-                onChange={(e) =>
+                onChange={(e) => {
+                  const nextType = e.target.value as PartyType;
                   setNewPartyDraft((d: any) => ({
                     ...EMPTY_PARTY_DRAFT,
-                    ...d,
-                    partyType: e.target.value,
-                    nit: e.target.value === "NATURAL" ? "" : d?.nit ?? "",
-                  }))
-                }
+                    ...(d ?? {}),
+                    partyType: nextType,
+                    nit: "",
+                    rif: "",
+                    needsManualReview: false,
+                    rifMatchedLine: "",
+                    activityEconomic: "",
+                    condition: "",
+                    retentionNote: "",
+                    rawText: "",
+                    companyName: nextType === "NATURAL" ? "" : d?.companyName ?? "",
+                    firstName: nextType === "NATURAL" ? d?.firstName ?? "" : "",
+                    lastName: nextType === "NATURAL" ? d?.lastName ?? "" : "",
+                  }));
+                }}
               >
                 <option value="NATURAL">Natural</option>
                 <option value="JURIDICA">Jurídica</option>
@@ -195,11 +495,11 @@ export default function PartyFormInline({
 
             {partyType === "JURIDICA" ? (
               <div className="col-span-2">
-                <label className="block text-xs font-medium">Razón social / Empresa</label>
+                <label className="block text-xs font-medium">Nombre de la Empresa</label>
                 <input
                   className="w-full border rounded px-2 py-1"
                   value={safeDraft.companyName}
-                  onChange={(e) => setNewPartyDraft((d: any) => ({ ...d, companyName: e.target.value }))}
+                  onChange={(e) => setNewPartyDraft((d: any) => ({ ...(d ?? {}), companyName: e.target.value }))}
                 />
               </div>
             ) : (
@@ -209,7 +509,7 @@ export default function PartyFormInline({
                   <input
                     className="w-full border rounded px-2 py-1"
                     value={safeDraft.firstName}
-                    onChange={(e) => setNewPartyDraft((d: any) => ({ ...d, firstName: e.target.value }))}
+                    onChange={(e) => setNewPartyDraft((d: any) => ({ ...(d ?? {}), firstName: e.target.value }))}
                   />
                 </div>
 
@@ -218,28 +518,56 @@ export default function PartyFormInline({
                   <input
                     className="w-full border rounded px-2 py-1"
                     value={safeDraft.lastName}
-                    onChange={(e) => setNewPartyDraft((d: any) => ({ ...d, lastName: e.target.value }))}
+                    onChange={(e) => setNewPartyDraft((d: any) => ({ ...(d ?? {}), lastName: e.target.value }))}
                   />
                 </div>
               </>
             )}
 
-            <div>
-              <label className="block text-xs font-medium">RIF / ID</label>
-              <input
-                className="w-full border rounded px-2 py-1"
-                value={safeDraft.rif}
-                onChange={(e) => setNewPartyDraft((d: any) => ({ ...d, rif: e.target.value }))}
-              />
+            <div className="col-span-3">
+              <SeniatRifConsult draft={safeDraft} setNewPartyDraft={setNewPartyDraft} />
             </div>
+
+            {partyType === "NATURAL" && (
+              <div className="col-span-3">
+                <label className="block text-xs font-medium">RIF</label>
+                <input
+                  className="w-full border rounded px-2 py-1"
+                  value={safeDraft.rif || ""}
+                  onChange={(e) => {
+                    const value = String(e.target.value ?? "")
+                      .toUpperCase()
+                      .replace(/[^A-Z0-9-]/g, "")
+                      .trim();
+
+                    setNewPartyDraft((d: any) => ({
+                      ...(d ?? {}),
+                      rif: value,
+                    }));
+                  }}
+                  placeholder="J-12345678-9"
+                />
+              </div>
+            )}
 
             {partyType === "JURIDICA" && (
               <div>
-                <label className="block text-xs font-medium">NIT (jurídica)</label>
+                <label className="block text-xs font-medium">NIT</label>
                 <input
                   className="w-full border rounded px-2 py-1"
-                  value={safeDraft.nit}
-                  onChange={(e) => setNewPartyDraft((d: any) => ({ ...d, nit: e.target.value }))}
+                  value={safeDraft.nit || ""}
+                  onChange={(e) => {
+                    const value = String(e.target.value ?? "")
+                      .toUpperCase()
+                      .replace(/[^A-Z0-9]/g, "")
+                      .trim();
+
+                    setNewPartyDraft((d: any) => {
+                      const base = { ...(d ?? {}) };
+                      base.nit = value;
+                      return base;
+                    });
+                  }}
                 />
               </div>
             )}
@@ -249,7 +577,7 @@ export default function PartyFormInline({
               <input
                 className="w-full border rounded px-2 py-1"
                 value={safeDraft.phone}
-                onChange={(e) => setNewPartyDraft((d: any) => ({ ...d, phone: e.target.value }))}
+                onChange={(e) => setNewPartyDraft((d: any) => ({ ...(d ?? {}), phone: e.target.value }))}
               />
             </div>
 
@@ -258,7 +586,7 @@ export default function PartyFormInline({
               <input
                 className="w-full border rounded px-2 py-1"
                 value={safeDraft.email}
-                onChange={(e) => setNewPartyDraft((d: any) => ({ ...d, email: e.target.value }))}
+                onChange={(e) => setNewPartyDraft((d: any) => ({ ...(d ?? {}), email: e.target.value }))}
               />
             </div>
 
@@ -267,7 +595,7 @@ export default function PartyFormInline({
               <input
                 className="w-full border rounded px-2 py-1"
                 value={safeDraft.address}
-                onChange={(e) => setNewPartyDraft((d: any) => ({ ...d, address: e.target.value }))}
+                onChange={(e) => setNewPartyDraft((d: any) => ({ ...(d ?? {}), address: e.target.value }))}
               />
             </div>
 
@@ -276,7 +604,7 @@ export default function PartyFormInline({
               <input
                 className="w-full border rounded px-2 py-1"
                 value={safeDraft.city}
-                onChange={(e) => setNewPartyDraft((d: any) => ({ ...d, city: e.target.value }))}
+                onChange={(e) => setNewPartyDraft((d: any) => ({ ...(d ?? {}), city: e.target.value }))}
               />
             </div>
 
@@ -285,7 +613,7 @@ export default function PartyFormInline({
               <input
                 className="w-full border rounded px-2 py-1"
                 value={safeDraft.state}
-                onChange={(e) => setNewPartyDraft((d: any) => ({ ...d, state: e.target.value }))}
+                onChange={(e) => setNewPartyDraft((d: any) => ({ ...(d ?? {}), state: e.target.value }))}
               />
             </div>
 
@@ -294,13 +622,118 @@ export default function PartyFormInline({
               <input
                 className="w-full border rounded px-2 py-1"
                 value={safeDraft.country}
-                onChange={(e) => setNewPartyDraft((d: any) => ({ ...d, country: e.target.value }))}
+                onChange={(e) => setNewPartyDraft((d: any) => ({ ...(d ?? {}), country: e.target.value }))}
               />
             </div>
 
-            {/* El companyId se genera automáticamente y se mantiene oculto.
-                Dejamos un input hidden para que el valor viaje en formularios si es necesario. */}
+            {partyType === "JURIDICA" && (
+              <>
+                <div>
+                  <label className="block text-xs font-medium">Actividad económica</label>
+                  <input
+                    className="w-full border rounded px-2 py-1"
+                    value={safeDraft.activityEconomic || ""}
+                    onChange={(e) =>
+                      setNewPartyDraft((d: any) => ({
+                        ...(d ?? {}),
+                        activityEconomic: e.target.value,
+                      }))
+                    }
+                    placeholder="Ej: Comercio al por mayor"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs font-medium">Condición</label>
+                  <input
+                    className="w-full border rounded px-2 py-1"
+                    value={safeDraft.condition || ""}
+                    onChange={(e) =>
+                      setNewPartyDraft((d: any) => ({
+                        ...(d ?? {}),
+                        condition: e.target.value,
+                      }))
+                    }
+                    placeholder="Ej: Contribuyente especial"
+                  />
+                </div>
+
+                <div className="col-span-3">
+                  <label className="block text-xs font-medium">Retención</label>
+                  <input
+                    className="w-full border rounded px-2 py-1"
+                    value={safeDraft.retentionNote || ""}
+                    onChange={(e) =>
+                      setNewPartyDraft((d: any) => ({
+                        ...(d ?? {}),
+                        retentionNote: e.target.value,
+                      }))
+                    }
+                    placeholder="Ej: Sujeto a retención, 2%, 75%, etc."
+                  />
+                </div>
+              </>
+            )}
+
             <input type="hidden" name="companyId" value={safeDraft.companyId} />
+
+            <div className="col-span-3">
+              {showPropietarioCheckbox && (
+                <label className="inline-flex items-center gap-2 mr-4">
+                  <input
+                    type="checkbox"
+                    checked={Boolean(safeDraft.isPropietario)}
+                    onChange={(e) => setPropietario(e.target.checked)}
+                  />
+                  <span className="text-xs">
+                    Propietario — si está activado, todo lo que se cree irá a: servicios, productos, inmuebles
+                  </span>
+                </label>
+              )}
+
+              {showProveedorCheckbox && (
+                <label className="inline-flex items-center gap-2 mr-4">
+                  <input
+                    type="checkbox"
+                    checked={Boolean(safeDraft.isProveedorContratista)}
+                    onChange={(e) => setProveedorContratista(e.target.checked)}
+                  />
+                  <span className="text-xs">
+                    Contratista — si está activado, todo lo que se cree irá a: servicios, productos, inmuebles
+                  </span>
+                </label>
+              )}
+
+              <div className="mt-2 text-xs text-gray-700">
+                {safeDraft.activityEconomic ? <div>Actividad económica: {safeDraft.activityEconomic}</div> : null}
+                {safeDraft.condition ? <div>Condición: {safeDraft.condition}</div> : null}
+                {safeDraft.retentionNote ? <div>Retención: {safeDraft.retentionNote}</div> : null}
+              </div>
+
+              {safeDraft.rawText ? (
+                <div className="mt-2">
+                  <div className="text-xs font-medium text-gray-700 mb-1">Texto completo detectado</div>
+                  <pre className="max-h-40 overflow-auto rounded bg-black p-2 text-[11px] text-green-400 whitespace-pre-wrap">
+                    {safeDraft.rawText}
+                  </pre>
+                </div>
+              ) : null}
+
+              <div className="mt-2 text-xs text-gray-600">
+                {safeDraft.rifMatchedLine ? (
+                  <>Coincidencia: {safeDraft.rifMatchedLine}</>
+                ) : safeDraft.checklist && safeDraft.checklist.length > 0 ? (
+                  <>
+                    Checklist:{" "}
+                    {safeDraft.checklist
+                      .map((it: any) => `${it.label} (${it.done ? "✓" : "✗"})`)
+                      .join(" • ")}
+                  </>
+                ) : (
+                  <>Checklist vacío</>
+                )}
+              </div>
+            </div>
 
             <div>
               <label className="block text-xs font-medium">Foto</label>
@@ -315,11 +748,34 @@ export default function PartyFormInline({
               )}
             </div>
 
+            <input type="hidden" name="isPropietario" value={safeDraft.isPropietario ? "1" : "0"} />
+            <input
+              type="hidden"
+              name="isProveedorContratista"
+              value={safeDraft.isProveedorContratista ? "1" : "0"}
+            />
+            <input type="hidden" name="needsManualReview" value={safeDraft.needsManualReview ? "1" : "0"} />
+            <input type="hidden" name="rifMatchedLine" value={safeDraft.rifMatchedLine || ""} />
+            <input type="hidden" name="activityEconomic" value={safeDraft.activityEconomic || ""} />
+            <input type="hidden" name="condition" value={safeDraft.condition || ""} />
+            <input type="hidden" name="retentionNote" value={safeDraft.retentionNote || ""} />
+            <input type="hidden" name="rawText" value={safeDraft.rawText || ""} />
+            <input type="hidden" name="defaultTargets" value={JSON.stringify(safeDraft.defaultTargets || [])} />
+            <input type="hidden" name="checklist" value={JSON.stringify(safeDraft.checklist || [])} />
+
             <div className="col-span-3 flex gap-2 mt-2">
-              <button type="button" onClick={() => handleSaveDraft(true)} className="bg-green-600 text-white px-3 py-1 rounded">
+              <button
+                type="button"
+                onClick={() => handleSaveDraft(true)}
+                className="bg-green-600 text-white px-3 py-1 rounded"
+              >
                 Guardar y usar
               </button>
-              <button type="button" onClick={() => handleSaveDraft(false)} className="bg-blue-500 text-white px-3 py-1 rounded">
+              <button
+                type="button"
+                onClick={() => handleSaveDraft(false)}
+                className="bg-blue-500 text-white px-3 py-1 rounded"
+              >
                 Guardar (no seleccionar)
               </button>
               <button type="button" onClick={onCancelForm} className="bg-gray-200 px-3 py-1 rounded">

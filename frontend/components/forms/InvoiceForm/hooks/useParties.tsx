@@ -1,15 +1,100 @@
 // hooks/useParties.tsx
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { genId, readFileAsDataUrl } from "../../../../lib/invoiceUtils";
-import type { PartyInfo, PartyRecord, PartyRole } from "../../../../types/invoice";
-import { LOCAL_STORAGE_KEY, AUXILIARIES_LOCAL_KEY, AUX_API, EMPLOYEES_LOCAL_KEY } from "./constants";
+import type {
+  PartyInfo,
+  PartyRecord,
+  PartyRole,
+  PartyChecklist,
+  ChecklistItem,
+} from "../../../../types/invoice";
+import {
+  LOCAL_STORAGE_KEY,
+  AUXILIARIES_LOCAL_KEY,
+  AUX_API,
+  CONDO_AUXILIARY_API,
+} from "./constants";
 
-/**
- * useParties
- * - mantiene parties en localStorage
- * - buildPartyRecordFromDraft + save handler
- * - handleSelectParty (acepta id o PartyRecord)
- */
+function toText(value: unknown): string {
+  return String(value ?? "").trim();
+}
+
+function toLowerText(value: unknown): string {
+  return toText(value).toLowerCase();
+}
+
+function hasOwnerOrContractorMarker(source: any): boolean {
+  if (!source) return false;
+
+  const directFlags = [
+    source?.isPropietario,
+    source?.isProveedorContratista,
+    source?.propietario,
+    source?.contratista,
+    source?.esPropietario,
+    source?.esContratista,
+    source?.propietarios,
+    source?.contratistas,
+    source?.hasPropietario,
+    source?.hasContratista,
+  ];
+
+  if (directFlags.some(Boolean)) return true;
+
+  const candidateLists: any[] = [
+    source?.checklist,
+    source?.meta?.checklist,
+    source?.meta?.items,
+    source?.items,
+    source?.tags,
+  ];
+
+  for (const list of candidateLists) {
+    const arr = Array.isArray(list) ? list : list ? [list] : [];
+    for (const item of arr) {
+      const text =
+        typeof item === "string"
+          ? toLowerText(item)
+          : toLowerText(
+              item?.label ??
+                item?.name ??
+                item?.title ??
+                item?.value ??
+                item?.text ??
+                JSON.stringify(item)
+            );
+
+      if (
+        text.includes("propiet") ||
+        text.includes("contrat") ||
+        text.includes("dueñ") ||
+        text.includes("dueño")
+      ) {
+        return true;
+      }
+
+      if (
+        item?.done === true &&
+        (text.includes("propiet") || text.includes("contrat"))
+      ) {
+        return true;
+      }
+    }
+  }
+
+  const metaText = toLowerText(source?.meta ? JSON.stringify(source.meta) : "");
+  if (
+    metaText.includes("propiet") ||
+    metaText.includes("contrat") ||
+    metaText.includes("dueñ") ||
+    metaText.includes("dueño")
+  ) {
+    return true;
+  }
+
+  return false;
+}
+
 export default function useParties(initialParty?: Partial<PartyInfo>) {
   const defaultParty: PartyInfo = {
     partyType: (initialParty?.partyType as any) ?? "NATURAL",
@@ -29,7 +114,16 @@ export default function useParties(initialParty?: Partial<PartyInfo>) {
   const [parties, setParties] = useState<PartyRecord[]>([]);
   const [selectedPartyId, setSelectedPartyId] = useState<string | "">("");
   const [showNewPartyForm, setShowNewPartyForm] = useState(false);
-  const [newPartyDraft, setNewPartyDraft] = useState<any>({
+
+  type NewPartyDraft = Partial<PartyRecord> & {
+    firstName?: string;
+    lastName?: string;
+    companyName?: string;
+    isPropietario?: boolean;
+    isProveedorContratista?: boolean;
+  };
+
+  const [newPartyDraft, setNewPartyDraft] = useState<NewPartyDraft>({
     partyType: "NATURAL",
     firstName: "",
     lastName: "",
@@ -43,108 +137,389 @@ export default function useParties(initialParty?: Partial<PartyInfo>) {
     nit: "",
     photoDataUrl: undefined,
     companyId: "",
+    checklist: [] as unknown as PartyChecklist,
+    isPropietario: false,
+    isProveedorContratista: false,
   });
-  const [partyPhotoPreview, setPartyPhotoPreview] = useState<string | undefined>(defaultParty.photoDataUrl);
+
+  const [partyPhotoPreview, setPartyPhotoPreview] = useState<string | undefined>(
+    defaultParty.photoDataUrl
+  );
   const [editingPartyId, setEditingPartyId] = useState<string | undefined>(undefined);
   const [receiptPartyRole, setReceiptPartyRole] = useState<PartyRole>("CLIENTE");
-
-  // ref para guardar temporalmente registros recién guardados y evitar races
   const pendingSavedRef = useRef<Map<string, PartyRecord>>(new Map());
 
-  // normalize helper (re-usable)
-  const normalizePartyRecord = useCallback((raw: any): PartyRecord => {
-    const id = raw?.id && String(raw.id).trim() ? String(raw.id) : genId();
-    // ensure companyId falls back to id
-    const companyId = raw?.companyId && String(raw.companyId).trim() ? String(raw.companyId) : id;
-    const partyType = (raw?.partyType ?? "NATURAL") as PartyRecord["partyType"];
-    const name =
-      (partyType === "JURIDICA"
-        ? raw?.companyName ?? raw?.name
-        : raw?.name ?? `${(raw?.firstName ?? "").toString().trim()} ${(raw?.lastName ?? "").toString().trim()}`)
-      .toString()
-      .trim() || "Sin nombre";
+  const normalizeChecklistRaw = useCallback((raw: any): PartyChecklist => {
+    const arr = Array.isArray(raw) ? raw.slice() : raw ? [raw] : [];
+    const mapped = arr
+      .filter((x) => x !== undefined && x !== null)
+      .map((x) => {
+        if (typeof x === "string") return toText(x) as unknown as ChecklistItem;
+        return x as ChecklistItem;
+      })
+      .filter((x) => {
+        if (typeof x === "string") return toText(x).length > 0;
+        return true;
+      });
 
-    return {
-      id,
-      companyId,
-      role: raw?.role ?? "CLIENTE",
-      partyType,
-      name,
-      phone: raw?.phone ?? "",
-      email: raw?.email ?? "",
-      address: raw?.address ?? "",
-      city: raw?.city ?? "",
-      country: raw?.country ?? "",
-      rif: raw?.rif ?? "",
-      nit: partyType === "JURIDICA" ? (raw?.nit ?? "") : undefined,
-      photoDataUrl: raw?.photoDataUrl ?? undefined,
-    } as PartyRecord;
+    const uniq = Array.from(
+      new Map(mapped.map((m) => [JSON.stringify(m), m])).values()
+    );
+    return uniq as PartyChecklist;
   }, []);
 
-  /* load parties from localStorage on mount
-     -> prefer LOCAL_STORAGE_KEY, use AUXILIARIES_LOCAL_KEY only as fallback
-  */
+  const checklistIncludes = useCallback(
+    (list: PartyChecklist | undefined, item: string | ChecklistItem) => {
+      if (!Array.isArray(list)) return false;
+      const key = JSON.stringify(item);
+      return list.some((i) => JSON.stringify(i) === key);
+    },
+    []
+  );
+
+  const checklistAdd = useCallback(
+    (list: PartyChecklist | undefined, item: string | ChecklistItem) => {
+      const base = Array.isArray(list) ? list.slice() : [];
+      if (checklistIncludes(base as PartyChecklist, item)) return base as PartyChecklist;
+      base.push(
+        typeof item === "string"
+          ? (item as unknown as ChecklistItem)
+          : (item as ChecklistItem)
+      );
+      return normalizeChecklistRaw(base) as PartyChecklist;
+    },
+    [checklistIncludes, normalizeChecklistRaw]
+  );
+
+  const checklistRemove = useCallback(
+    (list: PartyChecklist | undefined, item: string | ChecklistItem) => {
+      const base = Array.isArray(list) ? list.slice() : [];
+      const key = JSON.stringify(item);
+      const filtered = base.filter((i) => JSON.stringify(i) !== key);
+      return filtered as PartyChecklist;
+    },
+    []
+  );
+
+  const normalizePartyRecord = useCallback(
+    (raw: any): PartyRecord => {
+      const id = raw?.id && toText(raw.id) ? String(raw.id) : genId();
+      const companyId = raw?.companyId && toText(raw.companyId) ? String(raw.companyId) : id;
+      const partyType = (raw?.partyType ?? "NATURAL") as PartyRecord["partyType"];
+
+      const firstName = toText(raw?.firstName);
+      const lastName = toText(raw?.lastName);
+      const companyName = toText(raw?.companyName);
+      const rawName = toText(raw?.name);
+
+      const name =
+        (
+          partyType === "JURIDICA"
+            ? companyName || rawName
+            : rawName || `${firstName} ${lastName}`.trim()
+        ) || "Sin nombre";
+
+      let checklist: PartyChecklist = normalizeChecklistRaw(raw?.checklist);
+
+      if (raw?.propietario) checklist = checklistAdd(checklist, "propietario");
+      if (raw?.contratista) checklist = checklistAdd(checklist, "contratista");
+
+      return {
+        id,
+        companyId,
+        role: raw?.role ?? "CLIENTE",
+        partyType,
+        name,
+        phone: raw?.phone ?? "",
+        email: raw?.email ?? "",
+        address: raw?.address ?? "",
+        city: raw?.city ?? "",
+        country: raw?.country ?? "",
+        rif: raw?.rif ?? "",
+        nit: partyType === "JURIDICA" ? raw?.nit ?? "" : undefined,
+        photoDataUrl: raw?.photoDataUrl ?? undefined,
+        checklist,
+        meta: raw?.meta ?? {},
+        createdAt: raw?.createdAt,
+        updatedAt: raw?.updatedAt,
+      } as PartyRecord;
+    },
+    [checklistAdd, normalizeChecklistRaw]
+  );
+
   useEffect(() => {
     try {
       const raw = localStorage.getItem(LOCAL_STORAGE_KEY);
       if (raw) {
         const parsed = JSON.parse(raw);
-        const normalized = Array.isArray(parsed) ? parsed.map((p) => normalizePartyRecord(p)) : [];
+        const normalized = Array.isArray(parsed)
+          ? parsed.map((p) => normalizePartyRecord(p))
+          : [];
         setParties(normalized);
-        return; // stop: we prefer the main key
+        return;
       }
     } catch (err) {
       console.warn("[useParties] error reading LOCAL_STORAGE_KEY", err);
     }
 
-    // fallback: try auxiliaries only if main key gave nothing
     try {
       const rawAux = localStorage.getItem(AUXILIARIES_LOCAL_KEY);
-      if (rawAux) setParties(JSON.parse(rawAux).map((p: any) => normalizePartyRecord(p)));
+      if (rawAux) {
+        const parsed = JSON.parse(rawAux);
+        setParties(
+          Array.isArray(parsed)
+            ? parsed.map((p: any) => normalizePartyRecord(p))
+            : []
+        );
+      }
     } catch (err) {
       console.warn("[useParties] error reading AUXILIARIES_LOCAL_KEY", err);
     }
-
-    // other initial loads (kept for compatibility)
-    try {
-      const rawE = localStorage.getItem(EMPLOYEES_LOCAL_KEY);
-      // other initial loads can be done by other hooks if necessary
-    } catch (err) {}
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [normalizePartyRecord]);
 
   useEffect(() => {
     try {
       const normalized = parties.map((p) => normalizePartyRecord(p));
       localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(normalized));
-      // keep auxiliaries cache as well
       localStorage.setItem(AUXILIARIES_LOCAL_KEY, JSON.stringify(normalized));
     } catch (err) {
       console.warn("[useParties] error saving to localStorage", err);
     }
   }, [parties, normalizePartyRecord]);
 
-  const partyKeyFromParty = useCallback((partyRec: PartyRecord | { companyId?: string; id?: string } | undefined) => {
-    if (!partyRec) return "";
-    const cid = partyRec.companyId ?? (partyRec as any).companyId;
-    if (cid && String(cid).trim()) return String(cid);
-    const id = partyRec.id ?? (partyRec as any).id;
-    if (id && String(id).trim()) return String(id);
-    return "";
+  const partyKeyFromParty = useCallback(
+    (partyRec: PartyRecord | { companyId?: string; id?: string } | undefined) => {
+      if (!partyRec) return "";
+      const cid = partyRec.companyId;
+      if (cid && toText(cid)) return String(cid);
+      const id = partyRec.id;
+      if (id && toText(id)) return String(id);
+      return "";
+    },
+    []
+  );
+
+  const isMarkedAsAuxiliary = useCallback((rec: any) => {
+    return hasOwnerOrContractorMarker(rec);
   }, []);
 
-  function buildPartyRecordFromDraft(draft: any, role: PartyRole, id?: string): PartyRecord {
-    const partyType = (draft.partyType ?? "NATURAL") as PartyRecord["partyType"];
-    let name = "";
-    if (partyType === "JURIDICA") {
-      name = (draft.companyName ?? draft.name ?? "").toString().trim();
-    } else {
-      name = ((draft.name ?? "") || `${(draft.firstName ?? "").toString().trim()} ${(draft.lastName ?? "").toString().trim()}`).toString().trim();
+  const validateCondoAuxPayload = useCallback((rec: any) => {
+    if (!rec) return false;
+    const name = toText(rec?.name ?? rec?.companyName);
+    if (!name) return false;
+    return true;
+  }, []);
+
+  const trySendToCondoAuxiliary = useCallback(
+    async (rec: any) => {
+      if (!rec) return;
+      try {
+        if (!isMarkedAsAuxiliary(rec)) return;
+        if (!validateCondoAuxPayload(rec)) return;
+
+        const resp = await fetch(CONDO_AUXILIARY_API, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ action: "upsert", item: rec }),
+        });
+
+        const text = await resp.text();
+        let parsed: any;
+        try {
+          parsed = JSON.parse(text);
+        } catch {
+          parsed = text;
+        }
+
+        if (!resp.ok) {
+          console.warn("[useParties] CONDO_AUXILIARY_API upsert failed", {
+            status: resp.status,
+            body: parsed,
+            sent: rec,
+          });
+        } else {
+          console.info("[useParties] CONDO_AUXILIARY_API upsert success", {
+            status: resp.status,
+            body: parsed,
+          });
+        }
+      } catch (e) {
+        console.error("[useParties] trySendToCondoAuxiliary error", e, rec);
+      }
+    },
+    [isMarkedAsAuxiliary, validateCondoAuxPayload]
+  );
+
+  const tryDeleteFromCondoAuxiliary = useCallback(async (id: string) => {
+    if (!id) return;
+    try {
+      const resp = await fetch(CONDO_AUXILIARY_API, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "delete", id }),
+      });
+
+      const text = await resp.text();
+      let parsed: any;
+      try {
+        parsed = JSON.parse(text);
+      } catch {
+        parsed = text;
+      }
+
+      if (!resp.ok) {
+        console.warn("[useParties] CONDO_AUXILIARY_API delete failed", {
+          status: resp.status,
+          body: parsed,
+          id,
+        });
+      } else {
+        console.info("[useParties] CONDO_AUXILIARY_API delete success", {
+          status: resp.status,
+          body: parsed,
+          id,
+        });
+      }
+    } catch (e) {
+      console.error("[useParties] tryDeleteFromCondoAuxiliary failed", e, id);
     }
+  }, []);
+
+  const tryFindAndDeleteDoneFalseFromCondo = useCallback(
+    async (identifier: string) => {
+      if (!identifier) return;
+
+      try {
+        const queryBody = {
+          action: "find",
+          query: {
+            $or: [{ id: identifier }, { companyId: identifier }],
+            done: false,
+          },
+        };
+
+        const respFind = await fetch(CONDO_AUXILIARY_API, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(queryBody),
+        });
+
+        const text = await respFind.text();
+        let parsed: any;
+        try {
+          parsed = JSON.parse(text);
+        } catch {
+          parsed = null;
+        }
+
+        const items: any[] = Array.isArray(parsed)
+          ? parsed
+          : Array.isArray(parsed?.items)
+          ? parsed.items
+          : [];
+
+        if (!items || items.length === 0) return;
+
+        for (const it of items) {
+          try {
+            const itemId = it?.id ?? it?.companyId ?? identifier;
+            await tryDeleteFromCondoAuxiliary(itemId);
+          } catch (innerErr) {
+            console.warn(
+              "[useParties] tryFindAndDeleteDoneFalseFromCondo - error en item loop",
+              innerErr,
+              it
+            );
+          }
+        }
+      } catch (e) {
+        console.error(
+          "[useParties] tryFindAndDeleteDoneFalseFromCondo failed",
+          e,
+          identifier
+        );
+      }
+    },
+    [tryDeleteFromCondoAuxiliary]
+  );
+
+  const findExistingSavedRecord = useCallback(
+    (rec: { id?: string; companyId?: string } | undefined) => {
+      if (!rec) return null;
+      const id = rec.id ?? undefined;
+      const cid = rec.companyId ?? undefined;
+
+      if (id) {
+        const found = parties.find(
+          (p) => String(p.id) === String(id) || String(p.companyId) === String(id)
+        );
+        if (found) return found;
+      }
+
+      if (cid) {
+        const found = parties.find(
+          (p) =>
+            String(p.companyId) === String(cid) || String(p.id) === String(cid)
+        );
+        if (found) return found;
+      }
+
+      try {
+        const raw =
+          localStorage.getItem(LOCAL_STORAGE_KEY) ??
+          localStorage.getItem(AUXILIARIES_LOCAL_KEY);
+        if (raw) {
+          const arr = Array.isArray(JSON.parse(raw)) ? JSON.parse(raw) : [];
+          const found = (arr as any[]).find(
+            (x) =>
+              String(x.id) === String(id) ||
+              String(x.companyId) === String(id) ||
+              String(x.id) === String(cid) ||
+              String(x.companyId) === String(cid)
+          );
+          if (found) return normalizePartyRecord(found);
+        }
+      } catch {}
+
+      return null;
+    },
+    [parties, normalizePartyRecord]
+  );
+
+  function buildPartyRecordFromDraft(
+    draft: any,
+    role: PartyRole,
+    id?: string
+  ): PartyRecord {
+    const partyType = (draft.partyType ?? "NATURAL") as PartyRecord["partyType"];
+
+    const companyName = toText(draft.companyName);
+    const draftName = toText(draft.name);
+    const firstName = toText(draft.firstName);
+    const lastName = toText(draft.lastName);
+
+    let name = "";
+
+    if (partyType === "JURIDICA") {
+      name = companyName || draftName;
+    } else {
+      name = draftName || `${firstName} ${lastName}`.trim();
+    }
+
     if (!name) name = "Sin nombre";
 
     const finalId = id ?? genId();
-    const companyId = (draft.companyId && String(draft.companyId).trim()) ? String(draft.companyId) : finalId;
+    const companyId = toText(draft.companyId) ? String(draft.companyId) : finalId;
+
+    let checklist = normalizeChecklistRaw(draft?.checklist);
+
+    if (draft?.isPropietario) {
+      checklist = checklistAdd(checklist, "propietario");
+    }
+
+    if (draft?.isProveedorContratista) {
+      checklist = checklistAdd(checklist, "contratista");
+    }
 
     const rec: PartyRecord = {
       id: finalId,
@@ -157,115 +532,164 @@ export default function useParties(initialParty?: Partial<PartyInfo>) {
       city: draft.city ?? "",
       country: draft.country ?? "",
       rif: draft.rif ?? "",
-      nit: partyType === "JURIDICA" ? (draft.nit ?? "") : undefined,
+      nit: partyType === "JURIDICA" ? draft.nit ?? "" : undefined,
       photoDataUrl: draft.photoDataUrl ?? undefined,
       companyId,
+      checklist,
+      meta: draft.meta ?? {},
     } as PartyRecord;
 
     return rec;
   }
 
-  // Busca por id o por companyId, o acepta un PartyRecord
-  const handleSelectParty = useCallback((idOrRec: string | PartyRecord | undefined) => {
-    if (!idOrRec) {
-      setSelectedPartyId("");
-      setPartyInfo({
-        partyType: "NATURAL",
-        name: "",
-        phone: "",
-        email: "",
-        address: "",
-        city: "",
-        country: "",
-        rif: "",
-        nit: "",
-        photoDataUrl: undefined,
-      });
-      setPartyPhotoPreview(undefined);
-      return;
-    }
-
-    let found: PartyRecord | undefined;
-    if (typeof idOrRec === "string") {
-      const idStr = String(idOrRec);
-      found = parties.find((p) => String(p.id) === idStr || String(p.companyId) === idStr);
-
-      // si no lo encontramos en parties, chequea el pendingSavedRef (evita race después de guardar)
-      if (!found) {
-        const pending = pendingSavedRef.current.get(idStr);
-        if (pending) {
-          found = pending;
-          // opcional: limpiar del mapa si ya se resolvió
-          pendingSavedRef.current.delete(idStr);
-        }
+  const handleSelectParty = useCallback(
+    (idOrRec: string | PartyRecord | undefined) => {
+      if (!idOrRec) {
+        setSelectedPartyId("");
+        setPartyInfo({
+          partyType: "NATURAL",
+          name: "",
+          phone: "",
+          email: "",
+          address: "",
+          city: "",
+          country: "",
+          rif: "",
+          nit: "",
+          photoDataUrl: undefined,
+        });
+        setPartyPhotoPreview(undefined);
+        return;
       }
-    } else {
-      found = idOrRec;
-    }
 
-    if (!found) {
-      console.warn(`[useParties] handleSelectParty - not found ${typeof idOrRec === "string" ? idOrRec : (idOrRec as any)?.id ?? "<no-id>"}`);
-      return;
-    }
+      let found: PartyRecord | undefined;
 
-    const normalized = normalizePartyRecord(found);
+      if (typeof idOrRec === "string") {
+        const idStr = String(idOrRec);
+        found = parties.find(
+          (p) => String(p.id) === idStr || String(p.companyId) === idStr
+        );
 
-    // establecer estado de selección directamente (no depender de parties listo)
-    setSelectedPartyId(normalized.id);
-    setPartyInfo({
-      partyType: normalized.partyType,
-      name: normalized.name,
-      phone: normalized.phone,
-      email: normalized.email,
-      address: normalized.address,
-      city: normalized.city,
-      country: normalized.country,
-      rif: normalized.rif,
-      nit: normalized.nit ?? "",
-      photoDataUrl: normalized.photoDataUrl,
-      companyId: normalized.companyId,
-    });
-    setPartyPhotoPreview(normalized.photoDataUrl);
+        if (!found) {
+          const pending = pendingSavedRef.current.get(idStr);
+          if (pending) {
+            found = pending;
+            pendingSavedRef.current.delete(idStr);
+          }
+        }
+      } else {
+        found = idOrRec;
+      }
 
-    return normalized;
-  }, [parties, normalizePartyRecord]);
+      if (!found) {
+        console.warn(
+          `[useParties] handleSelectParty - not found ${
+            typeof idOrRec === "string"
+              ? idOrRec
+              : (idOrRec as any)?.id ?? "<no-id>"
+          }`
+        );
+        return;
+      }
 
-  // helper upsert function: reemplaza por id o companyId, o inserta al inicio
+      const normalized = normalizePartyRecord(found);
+
+      setSelectedPartyId(normalized.id);
+      setPartyInfo({
+        partyType: normalized.partyType,
+        name: normalized.name,
+        phone: normalized.phone,
+        email: normalized.email,
+        address: normalized.address,
+        city: normalized.city,
+        country: normalized.country,
+        rif: normalized.rif,
+        nit: normalized.nit ?? "",
+        photoDataUrl: normalized.photoDataUrl,
+        companyId: normalized.companyId,
+      });
+      setPartyPhotoPreview(normalized.photoDataUrl);
+
+      return normalized;
+    },
+    [parties, normalizePartyRecord]
+  );
+
   const upsertIntoParties = useCallback((newRec: PartyRecord, editingId?: string) => {
     setParties((prev) => {
-      const foundIndex = prev.findIndex((p) => p.id === newRec.id || (newRec.companyId && p.companyId === newRec.companyId));
+      const foundIndex = prev.findIndex(
+        (p) => p.id === newRec.id || (newRec.companyId && p.companyId === newRec.companyId)
+      );
+
       if (editingId) {
-        // si estamos editando, preferimos mapear por id
         return prev.map((p) => (p.id === editingId ? newRec : p));
       }
+
       if (foundIndex !== -1) {
-        // reemplazar el existente (evita duplicados)
         const copy = [...prev];
         copy[foundIndex] = newRec;
         return copy;
       }
-      // si no existe, insertarlo al inicio
+
       return [newRec, ...prev];
     });
   }, []);
 
-  async function handleSavePartyDraft(draft: any, role: PartyRole, selectAfterSave = true, editingId?: string) {
-    const rec = buildPartyRecordFromDraft(draft, role, editingId);
+  const saveChecklistToDb = useCallback(async (partyId: string, checklist: PartyChecklist) => {
     try {
-      const resp = await fetch(AUX_API, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "upsert", item: rec }) });
+      await fetch(AUX_API, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action: "upsert_checklist",
+          partyId: String(partyId),
+          checklist,
+        }),
+      });
+    } catch (e) {
+      console.warn("[useParties] saveChecklistToDb failed", e);
+    }
+  }, []);
+
+  async function handleSavePartyDraft(
+    draft: any,
+    role: PartyRole,
+    selectAfterSave = true,
+    editingId?: string
+  ) {
+    const rec = buildPartyRecordFromDraft(draft, role, editingId);
+
+    const prevSaved = findExistingSavedRecord({ id: rec.id, companyId: rec.companyId });
+    const prevMarked = isMarkedAsAuxiliary(prevSaved);
+
+    try {
+      const body = { action: "upsert", item: rec };
+
+      const resp = await fetch(AUX_API, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
+
       const text = await resp.text();
-      let parsed;
-      try { parsed = JSON.parse(text); } catch { parsed = null; }
+      let parsed: any;
+      try {
+        parsed = JSON.parse(text);
+      } catch {
+        parsed = null;
+      }
 
       if (resp.ok && parsed?.item) {
         const saved = normalizePartyRecord(parsed.item);
-        // guardar en mapa temporal para que las llamadas con id encuentren el registro si hay race
         pendingSavedRef.current.set(saved.id, saved);
-        // upsert en parties (async)
         upsertIntoParties(saved, editingId);
-        // setear selección inmediatamente (evita race con llamadas externas)
+
+        if (Array.isArray(saved.checklist) && saved.checklist.length > 0) {
+          saveChecklistToDb(saved.id, saved.checklist);
+        }
+
         if (selectAfterSave) {
-          setSelectedPartyId(saved.id); // estado directo
+          setSelectedPartyId(saved.id);
           setPartyInfo({
             partyType: saved.partyType,
             name: saved.name,
@@ -281,11 +705,28 @@ export default function useParties(initialParty?: Partial<PartyInfo>) {
           });
           setPartyPhotoPreview(saved.photoDataUrl);
         }
+
+        try {
+          const nowMarked = isMarkedAsAuxiliary(saved);
+          if (nowMarked) {
+            await trySendToCondoAuxiliary(saved);
+          } else if (prevMarked && !nowMarked) {
+            const identifier = saved.id ?? saved.companyId ?? "";
+            if (identifier) {
+              await tryFindAndDeleteDoneFalseFromCondo(identifier);
+            }
+          }
+        } catch {}
+
         return saved;
       } else {
-        // fallback to local update (también con upsert)
         pendingSavedRef.current.set(rec.id, rec);
         upsertIntoParties(rec, editingId);
+
+        if (Array.isArray(rec.checklist) && rec.checklist.length > 0) {
+          saveChecklistToDb(rec.id, rec.checklist);
+        }
+
         if (selectAfterSave) {
           setSelectedPartyId(rec.id);
           setPartyInfo({
@@ -303,12 +744,31 @@ export default function useParties(initialParty?: Partial<PartyInfo>) {
           });
           setPartyPhotoPreview(rec.photoDataUrl);
         }
+
+        try {
+          const nowMarked = isMarkedAsAuxiliary(rec);
+          if (nowMarked) {
+            await trySendToCondoAuxiliary(rec);
+          } else if (prevMarked && !nowMarked) {
+            const identifier = rec.id ?? rec.companyId ?? "";
+            if (identifier) {
+              await tryFindAndDeleteDoneFalseFromCondo(identifier);
+            }
+          }
+        } catch {}
+
         return rec;
       }
     } catch (e) {
-      // error de red -> fallback local (upsert)
+      console.warn("[useParties] handleSavePartyDraft error", e);
+
       pendingSavedRef.current.set(rec.id, rec);
       upsertIntoParties(rec, editingId);
+
+      if (Array.isArray(rec.checklist) && rec.checklist.length > 0) {
+        saveChecklistToDb(rec.id, rec.checklist);
+      }
+
       if (selectAfterSave) {
         setSelectedPartyId(rec.id);
         setPartyInfo({
@@ -326,16 +786,76 @@ export default function useParties(initialParty?: Partial<PartyInfo>) {
         });
         setPartyPhotoPreview(rec.photoDataUrl);
       }
+
+      try {
+        const nowMarked = isMarkedAsAuxiliary(rec);
+        if (nowMarked) {
+          await trySendToCondoAuxiliary(rec);
+        } else if (prevMarked && !nowMarked) {
+          const identifier = rec.id ?? rec.companyId ?? "";
+          if (identifier) {
+            await tryFindAndDeleteDoneFalseFromCondo(identifier);
+          }
+        }
+      } catch {}
+
       return rec;
     }
   }
 
   function handleRemoveParty(id: string) {
     if (!confirm("¿Eliminar este registro?")) return;
+
     setParties((p) => p.filter((x) => x.id !== id));
+
     (async () => {
-      try { await fetch(AUX_API, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "delete", id }) }); } catch (e) {}
+      try {
+        await fetch(AUX_API, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ action: "delete", id }),
+        });
+      } catch {}
+
+      try {
+        const raw = localStorage.getItem(LOCAL_STORAGE_KEY);
+        let found: any = null;
+
+        if (raw) {
+          try {
+            const arr = Array.isArray(JSON.parse(raw)) ? JSON.parse(raw) : [];
+            found =
+              (arr as any[]).find(
+                (x) =>
+                  String(x.id) === String(id) || String(x.companyId) === String(id)
+              ) ?? null;
+          } catch {}
+        }
+
+        if (!found) {
+          const rawAux = localStorage.getItem(AUXILIARIES_LOCAL_KEY);
+          if (rawAux) {
+            try {
+              const arr = Array.isArray(JSON.parse(rawAux)) ? JSON.parse(rawAux) : [];
+              found =
+                (arr as any[]).find(
+                  (x) =>
+                    String(x.id) === String(id) ||
+                    String(x.companyId) === String(id)
+                ) ?? null;
+            } catch {}
+          }
+        }
+
+        if (found && isMarkedAsAuxiliary(found)) {
+          const identifier = String(found.id ?? found.companyId ?? id);
+          await tryFindAndDeleteDoneFalseFromCondo(identifier);
+        }
+      } catch (e) {
+        console.warn("[useParties] handleRemoveParty - condo delete attempt failed", e);
+      }
     })();
+
     if (selectedPartyId === id) {
       setSelectedPartyId("");
       setPartyInfo({
@@ -362,12 +882,146 @@ export default function useParties(initialParty?: Partial<PartyInfo>) {
     setPartyPhotoPreview(dataUrl);
   };
 
-  const currentRole = useMemo(() => {
-    // UI consumer will set this appropriately; default CLIENTE
-    return receiptPartyRole;
-  }, [receiptPartyRole]);
+  const currentRole = useMemo(() => receiptPartyRole, [receiptPartyRole]);
+  const partiesForRole = useMemo(
+    () => parties.filter((r) => r.role === currentRole),
+    [parties, currentRole]
+  );
 
-  const partiesForRole = useMemo(() => parties.filter((r) => r.role === currentRole), [parties, currentRole]);
+  const updatePartyChecklist = useCallback(
+    async (partyId: string, checklist: any[]) => {
+      if (!partyId) return null;
+      const normalized = normalizeChecklistRaw(checklist);
+
+      let snapshot: any = null;
+      setParties((prev) => {
+        const copy = prev.map((p) =>
+          String(p.id) === String(partyId) ? { ...p, checklist: normalized } : p
+        );
+        snapshot =
+          copy.find((p) => String(p.id) === String(partyId)) ?? {
+            id: partyId,
+            checklist: normalized,
+          };
+        return copy;
+      });
+
+      try {
+        await fetch(AUX_API, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            action: "upsert_checklist",
+            partyId: String(partyId),
+            checklist: normalized,
+          }),
+        });
+
+        await fetch(AUX_API, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            action: "upsert",
+            item: { id: partyId, checklist: normalized },
+          }),
+        });
+
+        try {
+          if (!snapshot) snapshot = { id: partyId, checklist: normalized };
+          const nowMarked = isMarkedAsAuxiliary(snapshot);
+          if (nowMarked) {
+            await trySendToCondoAuxiliary(snapshot);
+          } else {
+            await tryFindAndDeleteDoneFalseFromCondo(String(partyId));
+          }
+        } catch {}
+      } catch (e) {
+        console.warn("[useParties] updatePartyChecklist failed", e);
+      }
+
+      return normalized;
+    },
+    [
+      isMarkedAsAuxiliary,
+      normalizeChecklistRaw,
+      tryFindAndDeleteDoneFalseFromCondo,
+      trySendToCondoAuxiliary,
+    ]
+  );
+
+  const toggleChecklistForParty = useCallback(
+    async (partyId: string, item: string | ChecklistItem) => {
+      if (!partyId) return null;
+      let newChecklist: PartyChecklist = [] as PartyChecklist;
+
+      setParties((prev) => {
+        const copy = prev.map((p) => {
+          if (String(p.id) !== String(partyId)) return p;
+          const list = Array.isArray(p.checklist)
+            ? p.checklist.slice()
+            : ([] as PartyChecklist);
+          const has = checklistIncludes(list, item);
+          newChecklist = has ? checklistRemove(list, item) : checklistAdd(list, item);
+          return { ...p, checklist: newChecklist };
+        });
+        return copy;
+      });
+
+      try {
+        await updatePartyChecklist(partyId, newChecklist as any);
+      } catch (e) {
+        console.warn("[useParties] toggleChecklistForParty - persist failed", e);
+      }
+
+      return newChecklist;
+    },
+    [checklistAdd, checklistIncludes, checklistRemove, updatePartyChecklist]
+  );
+
+  const toggleChecklistInDraft = useCallback(
+    (item: string | ChecklistItem) => {
+      setNewPartyDraft((d: any) => {
+        const list = Array.isArray(d.checklist) ? d.checklist.slice() : ([] as PartyChecklist);
+        const has = checklistIncludes(list, item);
+        const next = has ? checklistRemove(list, item) : checklistAdd(list, item);
+        return { ...d, checklist: next };
+      });
+    },
+    [checklistAdd, checklistIncludes, checklistRemove]
+  );
+
+  const addChecklistItemToDraft = useCallback(
+    (item: string | ChecklistItem) => {
+      setNewPartyDraft((d: any) => {
+        const list = Array.isArray(d.checklist) ? d.checklist.slice() : ([] as PartyChecklist);
+        const next = checklistAdd(list, item);
+        return { ...d, checklist: next };
+      });
+    },
+    [checklistAdd]
+  );
+
+  const removeChecklistItemFromDraft = useCallback(
+    (item: string | ChecklistItem) => {
+      setNewPartyDraft((d: any) => {
+        const list = Array.isArray(d.checklist) ? d.checklist.slice() : ([] as PartyChecklist);
+        const next = checklistRemove(list, item);
+        return { ...d, checklist: next };
+      });
+    },
+    [checklistRemove]
+  );
+
+  const selectedNormalizedParty = useCallback(
+    (idOrRec?: string | PartyRecord) => {
+      if (!idOrRec) return undefined;
+      if (typeof idOrRec === "string") {
+        return parties.find((p) => p.id === idOrRec || p.companyId === idOrRec);
+      }
+      return idOrRec;
+    },
+    [parties]
+  );
 
   return {
     partyInfo,
@@ -375,7 +1029,6 @@ export default function useParties(initialParty?: Partial<PartyInfo>) {
     parties,
     setParties,
     selectedPartyId,
-    // exponemos la función de selección (no el setter de estado crudo)
     setSelectedPartyId: handleSelectParty,
     showNewPartyForm,
     setShowNewPartyForm,
@@ -407,6 +1060,9 @@ export default function useParties(initialParty?: Partial<PartyInfo>) {
         nit: "",
         photoDataUrl: undefined,
         companyId: "",
+        checklist: [] as unknown as PartyChecklist,
+        isPropietario: false,
+        isProveedorContratista: false,
       });
       setPartyPhotoPreview(undefined);
     },
@@ -414,7 +1070,11 @@ export default function useParties(initialParty?: Partial<PartyInfo>) {
     handleNewPartyPhotoChange,
     partyKeyFromParty,
     partiesForRole,
-    // utilidad para obtener el registro normalizado (admite id o record)
-    selectedNormalizedParty: (idOrRec?: string | PartyRecord) => (idOrRec ? (typeof idOrRec === "string" ? parties.find((p) => p.id === idOrRec || p.companyId === idOrRec) : idOrRec) : undefined),
+    selectedNormalizedParty,
+    updatePartyChecklist,
+    toggleChecklistInDraft,
+    addChecklistItemToDraft,
+    removeChecklistItemFromDraft,
+    toggleChecklistForParty,
   };
 }
