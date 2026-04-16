@@ -3,8 +3,7 @@ import CatalogEditor from "./CatalogEditor";
 import ProductsSection from "./ProductsSection";
 import PropertyRow from "./PropertyRow";
 import AnnexesRow, { DocItem as AnnexDocItem } from "./AnnexesRow";
-import { EMPTY_ANNEX_LIST } from "./invoiceHelpers";
-import { matchById } from "./invoiceHelpers";
+import { EMPTY_ANNEX_LIST, matchById } from "./invoiceHelpers";
 
 type Props = {
   catalogEnabled: boolean;
@@ -109,21 +108,23 @@ export default function InvoiceCatalogSection({
   removeCatalogAttachmentStable,
 }: Props) {
   const createServiceSeed = React.useCallback(() => {
+    const isCondo = Boolean(partyHasOwnerOrContractor);
+
     return {
       companyId: partyKey,
-      domain: partyHasOwnerOrContractor ? "condo" : "general",
-      isPropietario: partyHasOwnerOrContractor,
-      isProveedorContratista: partyHasOwnerOrContractor,
-      propietario: partyHasOwnerOrContractor,
-      contratista: partyHasOwnerOrContractor,
+      domain: isCondo ? "condo" : "general",
+      isPropietario: isCondo,
+      isProveedorContratista: isCondo,
+      propietario: isCondo,
+      contratista: isCondo,
       meta: {
         transactionType: currentTx,
         companyId: partyKey,
-        domain: partyHasOwnerOrContractor ? "condo" : "general",
-        isPropietario: partyHasOwnerOrContractor,
-        isProveedorContratista: partyHasOwnerOrContractor,
-        propietario: partyHasOwnerOrContractor,
-        contratista: partyHasOwnerOrContractor,
+        domain: isCondo ? "condo" : "general",
+        isPropietario: isCondo,
+        isProveedorContratista: isCondo,
+        propietario: isCondo,
+        contratista: isCondo,
       },
     };
   }, [currentTx, partyHasOwnerOrContractor, partyKey]);
@@ -154,11 +155,13 @@ export default function InvoiceCatalogSection({
                 className="flex-1 border rounded px-2 py-1"
                 value={selectedCatalogServiceId}
                 onChange={(e) => {
-                  if (!catalogEnabled)
+                  if (!catalogEnabled) {
                     return alert(
                       "Selecciona primero un cliente/proveedor (con companyId) para usar el catálogo."
                     );
-                  const v = e.target.value;
+                  }
+
+                  const v = String(e.target.value ?? "");
                   if (v === "__create__") {
                     setCatalogEditor({
                       kind: "service",
@@ -168,6 +171,7 @@ export default function InvoiceCatalogSection({
                     setSelectedCatalogServiceId("");
                     return;
                   }
+
                   setSelectedCatalogServiceId(v);
                 }}
                 disabled={!catalogEnabled}
@@ -181,9 +185,10 @@ export default function InvoiceCatalogSection({
                       ? ` • ${Number(p.rate ?? p.tarifa).toFixed(2)}`
                       : ""
                   }`;
-                  const value = p.id ?? (p.masterId ?? p.id);
+
+                  const value = String(p.id ?? p.masterId ?? "");
                   return (
-                    <option key={String(value)} value={String(value)}>
+                    <option key={value} value={value}>
                       {label}
                     </option>
                   );
@@ -193,10 +198,12 @@ export default function InvoiceCatalogSection({
               <button
                 type="button"
                 onClick={() => {
-                  if (!catalogEnabled)
+                  if (!catalogEnabled) {
                     return alert(
                       "Selecciona primero un cliente/proveedor (con companyId) para agregar servicios."
                     );
+                  }
+
                   if (!selectedCatalogServiceId) {
                     setCatalogEditor({
                       kind: "service",
@@ -205,6 +212,7 @@ export default function InvoiceCatalogSection({
                     });
                     return;
                   }
+
                   if (
                     !serviceOptions.some((p: any) =>
                       matchById(p, selectedCatalogServiceId)
@@ -214,6 +222,7 @@ export default function InvoiceCatalogSection({
                       "El servicio seleccionado no pertenece a la empresa asociada al cliente/proveedor actual."
                     );
                   }
+
                   addServiceFromCatalog(selectedCatalogServiceId);
                   setSelectedCatalogServiceId("");
                 }}
@@ -226,19 +235,26 @@ export default function InvoiceCatalogSection({
               <button
                 type="button"
                 onClick={() => {
-                  if (!catalogEnabled)
+                  if (!catalogEnabled) {
                     return alert(
                       "Selecciona primero un cliente/proveedor (con companyId) para eliminar servicios."
                     );
-                  if (!selectedCatalogServiceId)
+                  }
+
+                  if (!selectedCatalogServiceId) {
                     return alert("Selecciona un servicio para eliminar.");
+                  }
+
                   const serv = servicesCatalog.find(
                     (x: any) => String(x.id) === String(selectedCatalogServiceId)
                   );
-                  if (!serv || String(serv.companyId ?? "") !== String(partyKey))
+
+                  if (!serv || String(serv.companyId ?? "") !== String(partyKey)) {
                     return alert(
                       "Solo se pueden eliminar servicios del catálogo vinculados a la empresa del cliente/proveedor actual."
                     );
+                  }
+
                   removeCatalogService(selectedCatalogServiceId);
                   setSelectedCatalogServiceId("");
                 }}
@@ -279,17 +295,20 @@ export default function InvoiceCatalogSection({
                 className="flex-1 border rounded px-2 py-1"
                 value={selectedCatalogPropertyId}
                 onChange={(e) => {
-                  if (!catalogEnabled)
+                  if (!catalogEnabled) {
                     return alert(
                       "Selecciona primero un cliente/proveedor (con companyId) para usar el catálogo."
                     );
-                  const v = e.target.value;
+                  }
+
+                  const v = String(e.target.value ?? "");
                   if (v === "__create__") {
                     setShowNewPropertyForm(true);
                     setSelectedCatalogPropertyId("");
                     setActivePropertyId("");
                     return;
                   }
+
                   setSelectedCatalogPropertyId(v);
                 }}
                 disabled={!catalogEnabled}
@@ -301,9 +320,10 @@ export default function InvoiceCatalogSection({
                   const label = `${p.name || p.title || "Inmueble"}${
                     p.sku ? ` • ${p.sku}` : ""
                   }${p.price ? ` • ${Number(p.price).toFixed(2)}` : ""}`;
-                  const value = p.id ?? (p.masterId ?? p.id);
+
+                  const value = String(p.id ?? p.masterId ?? "");
                   return (
-                    <option key={String(value)} value={String(value)}>
+                    <option key={value} value={value}>
                       {label}
                     </option>
                   );
@@ -313,10 +333,12 @@ export default function InvoiceCatalogSection({
               <button
                 type="button"
                 onClick={async () => {
-                  if (!catalogEnabled)
+                  if (!catalogEnabled) {
                     return alert(
                       "Selecciona primero un cliente/proveedor (con companyId) para agregar inmuebles."
                     );
+                  }
+
                   if (selectedCatalogPropertyId) {
                     if (
                       !propertyOptions.some((p: any) =>
@@ -327,12 +349,14 @@ export default function InvoiceCatalogSection({
                         "El inmueble seleccionado no pertenece a la empresa asociada al cliente/proveedor actual."
                       );
                     }
+
                     await addProductFromCatalogAndMaybeActivate(
                       selectedCatalogPropertyId
                     );
                     setSelectedCatalogPropertyId("");
                     return;
                   }
+
                   setShowNewPropertyForm(true);
                 }}
                 className="px-3 py-1 bg-gray-200 rounded"
@@ -344,19 +368,26 @@ export default function InvoiceCatalogSection({
               <button
                 type="button"
                 onClick={() => {
-                  if (!catalogEnabled)
+                  if (!catalogEnabled) {
                     return alert(
                       "Selecciona primero un cliente/proveedor (con companyId) para eliminar inmuebles."
                     );
-                  if (!selectedCatalogPropertyId)
+                  }
+
+                  if (!selectedCatalogPropertyId) {
                     return alert("Selecciona un inmueble para eliminar.");
+                  }
+
                   const prop = propertiesCatalog.find(
                     (x: any) => String(x.id) === String(selectedCatalogPropertyId)
                   );
-                  if (!prop || String(prop.companyId ?? "") !== String(partyKey))
+
+                  if (!prop || String(prop.companyId ?? "") !== String(partyKey)) {
                     return alert(
                       "Solo se pueden eliminar inmuebles del catálogo vinculados a la empresa del cliente/proveedor actual."
                     );
+                  }
+
                   removeCatalogProperty(selectedCatalogPropertyId);
                   setSelectedCatalogPropertyId("");
                 }}

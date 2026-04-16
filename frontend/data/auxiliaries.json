@@ -1,1 +1,37 @@
-[]
+[
+  {
+    "partyType": "JURIDICA",
+    "firstName": "",
+    "lastName": "",
+    "name": "SPLENDOR MANTENIMIENTO,C.A.",
+    "companyName": "Si el RIF es menor a nueve",
+    "rif": "J000680930",
+    "nit": "023213",
+    "phone": "",
+    "email": "",
+    "address": "",
+    "city": "",
+    "state": "",
+    "country": "",
+    "companyId": "de8faf09-7f42-4e5f-8072-8d0babae9328",
+    "isPropietario": false,
+    "isProveedorContratista": false,
+    "needsManualReview": false,
+    "rifMatchedLine": "J000680930 SPLENDOR MANTENIMIENTO,C.A. (SPLENDOR MANTENIMIENTO,C.A)",
+    "activityEconomic": "OTRAS ACTIVIDADES DE SERVICIOS",
+    "condition": "Contribuyente Ordinario del IVA y Agente de Retención del IVA",
+    "retentionNote": "La condición de este contribuyente requiere la retención del 75% del impuesto causado, salvo que incurra en los supuestos establecidos para la retención del 100%.",
+    "rawText": "RIF\t\n     CÉDULA O PASAPORTE\t\n     Ejemplo del RIF: V123456789\n      Si el RIF es menor a nueve (9) dígitos\n      complete con ceros (0) a la izquierda\n\n     Ejemplo de la Cédula: 12345678\n\n     Ejemplo de Pasaporte: D1234567\n\n     Escriba las letras y/o números que observa en el recuadro:\n\n\t\n\n\t\n\n__________________________________\n\nJ000680930 SPLENDOR MANTENIMIENTO,C.A. (SPLENDOR MANTENIMIENTO,C.A)\n\nActividad Económica: OTRAS ACTIVIDADES DE SERVICIOS\n\nCondición: Contribuyente Ordinario del IVA\ny Agente de Retención del IVA\nLa condición de este contribuyente requiere la retención del 75% del impuesto causado, salvo que incurra en los supuestos establecidos para la retención del 100%.",
+    "defaultTargets": [],
+    "checklist": [],
+    "documentType": "rif",
+    "actividadEconomica": "OTRAS ACTIVIDADES DE SERVICIOS",
+    "condicionRetencion": "Contribuyente Ordinario del IVA y Agente de Retención del IVA",
+    "retencion": "La condición de este contribuyente requiere la retención del 75% del impuesto causado, salvo que incurra en los supuestos establecidos para la retención del 100%.",
+    "role": "CLIENTE",
+    "id": "0dec5764-1ef5-4083-8e0f-88aa53a79761",
+    "meta": {},
+    "createdAt": "2026-04-16T21:00:42.497Z",
+    "updatedAt": "2026-04-16T21:00:42.497Z"
+  }
+]

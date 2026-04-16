@@ -1,4 +1,4 @@
-import React from "react";
+import React, { useEffect } from "react";
 import ServiceRow from "./ServiceRow";
 import {
   getLineQuantity,
@@ -7,11 +7,43 @@ import {
   toNumber,
 } from "./invoiceHelpers";
 
+type InvoiceType = "VENTA" | "COMPRA" | string | undefined;
+
+function normalizeInvoiceType(invoiceType?: InvoiceType) {
+  return String(invoiceType ?? "").toUpperCase().trim();
+}
+
+function getAccountingCategory(invoiceType?: InvoiceType, items?: any[]) {
+  const type = normalizeInvoiceType(invoiceType);
+
+  if (type === "VENTA") return "INGRESO";
+  if (type === "COMPRA") return "GASTO";
+
+  const fromItems = (items || []).find((it: any) => {
+    const raw = String(it?.meta?.transactionType ?? it?.transactionType ?? "")
+      .toUpperCase()
+      .trim();
+    return raw === "VENTA" || raw === "COMPRA";
+  });
+
+  const fallbackType = String(
+    fromItems?.meta?.transactionType ?? fromItems?.transactionType ?? ""
+  )
+    .toUpperCase()
+    .trim();
+
+  if (fallbackType === "VENTA") return "INGRESO";
+  if (fallbackType === "COMPRA") return "GASTO";
+
+  return "";
+}
+
 type Props = {
   items: any[];
   safeUpdateItem: (index: number, patch: Partial<any>) => Promise<void>;
   safeRemoveItem: (index: number) => Promise<void>;
   safeOnItemPhotosChange: (index: number, files: FileList | null) => Promise<void>;
+  invoiceType?: InvoiceType;
 };
 
 export default function InvoiceLinesSection({
@@ -19,14 +51,45 @@ export default function InvoiceLinesSection({
   safeUpdateItem,
   safeRemoveItem,
   safeOnItemPhotosChange,
+  invoiceType,
 }: Props) {
+  const accountingCategory = getAccountingCategory(invoiceType, items);
+
+  useEffect(() => {
+    if (!accountingCategory) return;
+
+    items.forEach((it: any, idx: number) => {
+      const current = String(
+        it?.category ??
+          it?.account ??
+          it?.meta?.category ??
+          it?.meta?.account ??
+          ""
+      )
+        .toUpperCase()
+        .trim();
+
+      if (current !== accountingCategory) {
+        void safeUpdateItem(idx, {
+          category: accountingCategory,
+          account: accountingCategory,
+          meta: {
+            ...(it?.meta ?? {}),
+            category: accountingCategory,
+            account: accountingCategory,
+          },
+        });
+      }
+    });
+  }, [accountingCategory, items, safeUpdateItem]);
+
   return (
     <div className="mt-3">
       <div className="mb-3">
         <div className="text-sm font-medium">Artículos / Servicios</div>
         <div className="text-xs text-gray-500">
-          Las cuentas contables se asignan automáticamente: clientes (venta) /
-          proveedores (compra).
+          Las cuentas contables se asignan automáticamente: venta = ingreso,
+          compra = gasto.
         </div>
       </div>
 
@@ -43,6 +106,18 @@ export default function InvoiceLinesSection({
             const lineUnit = getLineEditableUnit(it);
             const lineCalcTotal = getLineTotalValue(it);
 
+            const lineCategory =
+              String(
+                it?.category ??
+                  it?.account ??
+                  it?.meta?.category ??
+                  it?.meta?.account ??
+                  accountingCategory ??
+                  "-"
+              )
+                .toUpperCase()
+                .trim() || "-";
+
             return (
               <div key={it.id ?? `item-${idx}`} className="border rounded p-3">
                 {kind === "SERVICIO" ? (
@@ -52,6 +127,7 @@ export default function InvoiceLinesSection({
                     updateItem={safeUpdateItem as any}
                     removeItem={safeRemoveItem as any}
                     onPhotosChange={safeOnItemPhotosChange as any}
+                    invoiceType={invoiceType}
                   />
                 ) : (
                   <div className="grid grid-cols-1 md:grid-cols-5 gap-3 items-end">
@@ -65,12 +141,15 @@ export default function InvoiceLinesSection({
                       <div className="text-xs text-gray-500">
                         {it?.meta?.propertyId ? (
                           <>
-                            Inmueble:{" "}
-                            <code>{String(it.meta.propertyId)}</code>
+                            Inmueble: <code>{String(it.meta.propertyId)}</code>
                           </>
                         ) : (
                           <>Tarifa / precio cargado automáticamente</>
                         )}
+                      </div>
+                      <div className="text-xs text-gray-600 mt-1">
+                        Categoría contable:{" "}
+                        <span className="font-medium">{lineCategory}</span>
                       </div>
                     </div>
 
@@ -88,13 +167,20 @@ export default function InvoiceLinesSection({
                           const quantity = toNumber(e.target.value || 1) || 1;
                           const unit = getLineEditableUnit(it);
                           const totalCalc = quantity * unit;
-                          safeUpdateItem(idx, {
+                          void safeUpdateItem(idx, {
                             quantity,
                             unitPrice: unit,
                             price: unit,
                             rate: unit,
                             tarifa: unit,
                             total: totalCalc,
+                            category: accountingCategory,
+                            account: accountingCategory,
+                            meta: {
+                              ...(it?.meta ?? {}),
+                              category: accountingCategory,
+                              account: accountingCategory,
+                            },
                           });
                         }}
                       />
@@ -114,13 +200,20 @@ export default function InvoiceLinesSection({
                           const unit = toNumber(e.target.value);
                           const quantity = lineQty;
                           const totalCalc = quantity * unit;
-                          safeUpdateItem(idx, {
+                          void safeUpdateItem(idx, {
                             quantity,
                             unitPrice: unit,
                             price: unit,
                             rate: unit,
                             tarifa: unit,
                             total: totalCalc,
+                            category: accountingCategory,
+                            account: accountingCategory,
+                            meta: {
+                              ...(it?.meta ?? {}),
+                              category: accountingCategory,
+                              account: accountingCategory,
+                            },
                           });
                         }}
                       />
@@ -140,7 +233,7 @@ export default function InvoiceLinesSection({
                     <div className="flex md:justify-end gap-2">
                       <button
                         type="button"
-                        onClick={() => safeRemoveItem(idx)}
+                        onClick={() => void safeRemoveItem(idx)}
                         className="px-3 py-2 bg-red-100 text-red-600 rounded"
                       >
                         Eliminar

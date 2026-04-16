@@ -10,6 +10,7 @@ type PartyDraft = {
   partyType: PartyType;
   firstName: string;
   lastName: string;
+  name: string;
   companyName: string;
   rif: string;
   nit: string;
@@ -37,6 +38,7 @@ const EMPTY_PARTY_DRAFT: PartyDraft = {
   partyType: "NATURAL",
   firstName: "",
   lastName: "",
+  name: "",
   companyName: "",
   rif: "",
   nit: "",
@@ -192,6 +194,7 @@ function parseRifMatchedLine(input: string) {
       firstName,
       lastName,
       fullName: cleanedName,
+      name: cleanedName,
       companyName: cleanedName,
     };
   }
@@ -239,6 +242,8 @@ export default function PartyFormInline({
     return {
       ...EMPTY_PARTY_DRAFT,
       ...(newPartyDraft ?? {}),
+      name: String(newPartyDraft?.name ?? newPartyDraft?.companyName ?? "").trim(),
+      companyName: String(newPartyDraft?.companyName ?? newPartyDraft?.name ?? "").trim(),
       isPropietario: isTruthyLike(newPartyDraft?.isPropietario),
       isProveedorContratista: isTruthyLike(newPartyDraft?.isProveedorContratista),
       needsManualReview: isTruthyLike(newPartyDraft?.needsManualReview),
@@ -283,6 +288,11 @@ export default function PartyFormInline({
         base.companyId = generateCompanyId();
       }
 
+      if (base.partyType === "JURIDICA") {
+        base.name = String(base.name ?? base.companyName ?? "").trim();
+        base.companyName = String(base.companyName ?? base.name ?? "").trim();
+      }
+
       return base;
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -308,13 +318,16 @@ export default function PartyFormInline({
       base.rif = parsed.rif || base.rif || "";
 
       if (partyType === "JURIDICA") {
-        base.companyName = parsed.companyName || base.companyName || "";
+        const company = parsed.companyName || parsed.name || "";
+        base.name = company || base.name || "";
+        base.companyName = company || base.companyName || "";
         base.firstName = "";
         base.lastName = "";
       } else {
         const names = splitNaturalName(parsed.fullName || "");
         base.firstName = names.firstName || base.firstName || "";
         base.lastName = names.lastName || base.lastName || "";
+        base.name = "";
         base.companyName = "";
       }
 
@@ -482,7 +495,8 @@ export default function PartyFormInline({
                     condition: "",
                     retentionNote: "",
                     rawText: "",
-                    companyName: nextType === "NATURAL" ? "" : d?.companyName ?? "",
+                    name: nextType === "NATURAL" ? "" : d?.name ?? d?.companyName ?? "",
+                    companyName: nextType === "NATURAL" ? "" : d?.companyName ?? d?.name ?? "",
                     firstName: nextType === "NATURAL" ? d?.firstName ?? "" : "",
                     lastName: nextType === "NATURAL" ? d?.lastName ?? "" : "",
                   }));
@@ -498,8 +512,14 @@ export default function PartyFormInline({
                 <label className="block text-xs font-medium">Nombre de la Empresa</label>
                 <input
                   className="w-full border rounded px-2 py-1"
-                  value={safeDraft.companyName}
-                  onChange={(e) => setNewPartyDraft((d: any) => ({ ...(d ?? {}), companyName: e.target.value }))}
+                  value={safeDraft.name || safeDraft.companyName}
+                  onChange={(e) =>
+                    setNewPartyDraft((d: any) => ({
+                      ...(d ?? {}),
+                      name: e.target.value,
+                      companyName: e.target.value,
+                    }))
+                  }
                 />
               </div>
             ) : (

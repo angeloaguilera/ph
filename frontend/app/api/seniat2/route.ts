@@ -1,4 +1,3 @@
-// frontend/app/api/seniat2/route.ts
 import { NextRequest, NextResponse } from "next/server";
 import fs from "fs/promises";
 import path from "path";
@@ -76,8 +75,6 @@ declare global {
   var __seniatSessions: Map<string, SeniatSession> | undefined;
   // eslint-disable-next-line no-var
   var __seniatCleanupStarted: boolean | undefined;
-  // eslint-disable-next-line no-var
-  var __seniatWorkspacePrepared: boolean | undefined;
 }
 
 function sleep(ms: number) {
@@ -123,16 +120,13 @@ async function resetDir(dir: string) {
   await ensureDir(dir);
 }
 
-async function prepareWorkspaceOnce() {
-  if (globalThis.__seniatWorkspacePrepared) return;
-  globalThis.__seniatWorkspacePrepared = true;
-
+async function prepareWorkspace() {
   await resetDir(CAPTURES_DIR);
   await resetDir(PUBLIC_CAPTURES_DIR);
   await ensureDir(PROFILE_DIR);
 
   if (DEBUG_SENIAT) {
-    console.log("[SENIAT] Carpetas recreadas:");
+    console.log("[SENIAT] Carpetas recreadas en esta llamada:");
     console.log(" -", CAPTURES_DIR);
     console.log(" -", PUBLIC_CAPTURES_DIR);
   }
@@ -141,7 +135,7 @@ async function prepareWorkspaceOnce() {
 async function getBrowser(): Promise<Browser> {
   if (globalThis.__seniatBrowser) return globalThis.__seniatBrowser;
 
-  await prepareWorkspaceOnce();
+  await ensureDir(PROFILE_DIR);
 
   globalThis.__seniatBrowser = await puppeteer.launch({
     headless: true,
@@ -873,7 +867,7 @@ function buildJsonResponse(data: SeniatResponse, sessionId?: string, status = 20
 }
 
 async function handleRequest(request: NextRequest) {
-  await prepareWorkspaceOnce();
+  await prepareWorkspace();
   startCleanupLoopOnce();
   await cleanupExpiredSessions();
 

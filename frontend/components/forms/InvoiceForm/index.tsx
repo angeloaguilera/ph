@@ -3,6 +3,7 @@
 import React from "react";
 
 import useInvoiceFormViewModel from "./useInvoiceFormViewModel";
+import { matchById } from "./invoiceHelpers";
 
 import PartyFormInline from "./PartyFormInline";
 import PayrollSection from "./PayrollSection";
@@ -11,12 +12,15 @@ import InvoiceLinesSection from "./InvoiceLinesSection";
 import InvoiceTotalsSection from "./InvoiceTotalsSection";
 import InvoiceDocumentHeaderSection from "./InvoiceDocumentHeaderSection";
 import InvoiceCurrencySection from "./InvoiceCurrencySection";
+import styles from "./InvoiceForm.module.css";
 
-export default function InvoiceForm({
-  onSave,
-  onGenerateReports,
-  initialValues,
-}: any) {
+type Props = {
+  onSave: (e?: any) => void;
+  onGenerateReports?: () => void;
+  initialValues?: any;
+};
+
+export default function InvoiceForm({ onSave, onGenerateReports, initialValues }: Props) {
   const vm = useInvoiceFormViewModel(initialValues);
 
   const {
@@ -161,25 +165,52 @@ export default function InvoiceForm({
     handleSubmit,
   } = vm;
 
-  const consulting = false;
+  const resetCatalogSelection = React.useCallback(() => {
+    setSelectedCatalogProductId("");
+    setSelectedCatalogServiceId("");
+    setSelectedCatalogPropertyId("");
+    setShowNewPropertyForm(false);
+    setActivePropertyId("");
+    setPropertyAnnexesState({});
+  }, [
+    setSelectedCatalogProductId,
+    setSelectedCatalogServiceId,
+    setSelectedCatalogPropertyId,
+    setShowNewPropertyForm,
+    setActivePropertyId,
+    setPropertyAnnexesState,
+  ]);
+
+  const safeAddProductFromCatalog = React.useCallback(
+    (catalogId?: string) => {
+      const id = String(catalogId ?? selectedCatalogProductId ?? "").trim();
+
+      if (!id) {
+        alert("Selecciona un producto del catálogo antes de agregarlo.");
+        return;
+      }
+
+      const existsInOptions = (productOptions || []).some((p: any) => matchById(p, id));
+      const existsInCatalog = (productsCatalog || []).some((p: any) => matchById(p, id));
+
+      if (!existsInOptions && !existsInCatalog) {
+        alert("Producto no encontrado en el catálogo de la empresa.");
+        return;
+      }
+
+      return (addProductFromCatalog as any)(id);
+    },
+    [addProductFromCatalog, productOptions, productsCatalog, selectedCatalogProductId]
+  );
 
   const handleConsultarParty = async (pagina: string, rif: string) => {
-    console.log("[InvoiceForm] onConsultar recibido:", { pagina, rif });
-    console.log("[InvoiceForm] draft actual antes de consultar:", newPartyDraft);
-
     try {
-      console.log("[InvoiceForm] consulta simulada / puente activo");
-      console.log("[InvoiceForm] página:", pagina);
-      console.log("[InvoiceForm] rif:", rif);
-
       setNewPartyDraft((d: any) => ({
         ...(d ?? {}),
         pagina,
         rif,
         needsManualReview: true,
       }));
-
-      console.log("[InvoiceForm] draft luego del puente de consulta");
     } catch (error) {
       console.error("[InvoiceForm] error en handleConsultarParty:", error);
       throw error;
@@ -192,301 +223,277 @@ export default function InvoiceForm({
         e.preventDefault();
         handleSubmit(e, onSave);
       }}
-      className="mx-auto w-full max-w-5xl space-y-4 overflow-x-hidden p-4"
+      className={styles.form}
     >
-      <div className="w-full min-w-0 max-w-full overflow-hidden">
-        <InvoiceDocumentHeaderSection
-          docKind={docKind}
-          setDocKind={setDocKind}
-          invoiceType={invoiceType}
-          onInvoiceTypeChange={handleInvoiceTypeChange}
-          invoiceName={invoiceName}
-          setInvoiceName={setInvoiceName}
-          documentDateTime={documentDateTime}
-          setDocumentDateTime={setDocumentDateTime}
-          numeroRecibo={numeroRecibo}
-          setNumeroRecibo={setNumeroRecibo}
-          numeroFactura={numeroFactura}
-          setNumeroFactura={setNumeroFactura}
-          numeroControl={numeroControl}
-          setNumeroControl={setNumeroControl}
-          destination={destination}
-          setDestination={setDestination}
-          bank={bank}
-          setBank={setBank}
-          caja={caja}
-          setCaja={setCaja}
-          paymentType={paymentType}
-          setPaymentType={setPaymentType}
-          referenceNumber={referenceNumber}
-          setReferenceNumber={setReferenceNumber}
-        />
-      </div>
-
-      {docKind === "NOMINA" && (
-        <div className="w-full min-w-0 max-w-full overflow-hidden">
-          <PayrollSection
-            payrollReceipts={payrollReceipts}
-            addPayrollReceipt={addPayrollReceipt}
-            updatePayrollReceipt={updatePayrollReceipt}
-            removePayrollReceipt={removePayrollReceipt}
-            employees={employees}
-            showNewEmployeeForm={showNewEmployeeForm}
-            setShowNewEmployeeForm={setShowNewEmployeeForm}
-            newEmployeeDraft={newEmployeeDraft}
-            setNewEmployeeDraft={setNewEmployeeDraft}
-            employeePhotoPreview={employeePhotoPreview}
-            setEmployeePhotoPreview={setEmployeePhotoPreview}
-            handleNewEmployeePhotoChange={handleNewEmployeePhotoChange}
-            handleRegisterAndUseEmployee={handleRegisterAndUseEmployee}
-            handleUseEmployeeWithoutRegister={handleUseEmployeeWithoutRegister}
-            handleRemoveEmployeeFromTray={handleRemoveEmployeeFromTray}
-            handleEditEmployeeFromTray={handleEditEmployeeFromTray}
-            handleCloneEmployeeFromTray={handleCloneEmployeeFromTray}
-            calculateAgeFromDate={undefined as any}
-            editingEmployeeId={editingEmployeeId}
-            setEditingEmployeeId={setEditingEmployeeId}
-            receiptEmployeeFormIndex={receiptEmployeeFormIndex}
-            setReceiptEmployeeFormIndex={setReceiptEmployeeFormIndex}
+      <div className={styles.stack}>
+        <section className={styles.section}>
+          <InvoiceDocumentHeaderSection
+            docKind={docKind}
+            setDocKind={setDocKind}
+            invoiceType={invoiceType}
+            onInvoiceTypeChange={handleInvoiceTypeChange}
+            invoiceName={invoiceName}
+            setInvoiceName={setInvoiceName}
+            documentDateTime={documentDateTime}
+            setDocumentDateTime={setDocumentDateTime}
+            numeroRecibo={numeroRecibo}
+            setNumeroRecibo={setNumeroRecibo}
+            numeroFactura={numeroFactura}
+            setNumeroFactura={setNumeroFactura}
+            numeroControl={numeroControl}
+            setNumeroControl={setNumeroControl}
+            destination={destination}
+            setDestination={setDestination}
+            bank={bank}
+            setBank={setBank}
+            caja={caja}
+            setCaja={setCaja}
+            paymentType={paymentType}
+            setPaymentType={setPaymentType}
+            referenceNumber={referenceNumber}
+            setReferenceNumber={setReferenceNumber}
           />
-        </div>
-      )}
+        </section>
 
-      {docKind !== "NOMINA" && (
-        <div className="mb-3 w-full min-w-0 max-w-full overflow-hidden rounded border p-3">
-          <PartyFormInline
-            currentRole={computedPartyRole}
-            partiesForRole={partiesForRole}
-            selectedPartyId={selectedPartyId}
-            onSelectParty={(id: string) => {
-              console.log("[InvoiceForm] seleccionar party:", id);
-              setSelectedPartyId(id);
-              setSelectedCatalogProductId("");
-              setSelectedCatalogServiceId("");
-              setSelectedCatalogPropertyId("");
-              setShowNewPropertyForm(false);
-              setActivePropertyId("");
-              setPropertyAnnexesState({});
-            }}
-            onOpenNew={() => {
-              console.log("[InvoiceForm] abrir nuevo party");
-              setShowNewPartyForm(true);
-              setEditingPartyId(undefined);
-              setNewPartyDraft({
-                partyType: "NATURAL",
-                firstName: "",
-                lastName: "",
-                companyName: "",
-                phone: "",
-                email: "",
-                address: "",
-                city: "",
-                country: "",
-                rif: "",
-                nit: "",
-                photoDataUrl: undefined,
-                companyId: "",
-              });
-              setPartyPhotoPreview(undefined);
-              setSelectedCatalogProductId("");
-              setSelectedCatalogServiceId("");
-              setSelectedCatalogPropertyId("");
-              setShowNewPropertyForm(false);
-              setActivePropertyId("");
-              setPropertyAnnexesState({});
-            }}
-            onEditSelected={() => {
-              console.log("[InvoiceForm] editar party seleccionado:", selectedPartyId);
-              setEditingPartyId(selectedPartyId || undefined);
-              const found = parties.find((x: any) => x.id === selectedPartyId);
-              if (found) {
-                setNewPartyDraft({ ...found });
-                setPartyPhotoPreview(found.photoDataUrl);
-                setShowNewPartyForm(true);
-                console.log("[InvoiceForm] party cargado para edición:", found);
-              } else {
-                console.warn("[InvoiceForm] no se encontró party para editar");
-              }
-            }}
-            showNewPartyForm={showNewPartyForm}
-            newPartyDraft={newPartyDraft}
-            setNewPartyDraft={setNewPartyDraft}
-            partyPhotoPreview={partyPhotoPreview}
-            onPhotoChange={handleNewPartyPhotoChange}
-            onSaveDraft={(selectAfterSave?: boolean) => {
-              console.log("[InvoiceForm] guardar party draft", {
-                selectAfterSave,
-                editingPartyId: vm.editingPartyId,
-                newPartyDraft,
-              });
-
-              handleSavePartyDraft(
-                newPartyDraft,
-                computedPartyRole,
-                selectAfterSave,
-                vm.editingPartyId,
-              )
-                .then((rec: any) => {
-                  console.log("[InvoiceForm] party guardado:", rec);
-                  if (selectAfterSave && rec && rec.id) {
-                    setSelectedPartyId(rec.id);
-                  }
-                })
-                .catch((err: any) => {
-                  console.error("Error guardando party draft:", err);
-                });
-            }}
-            onCancelForm={() => {
-              console.log("[InvoiceForm] cancelar formulario party");
-              handleCancelPartyForm();
-            }}
-            onRemoveParty={(id: string) => {
-              if (!id) return;
-              const found = parties.find((p: any) => p.id === id);
-              if (!found) return;
-
-              if (!confirm(`¿Eliminar a ${found.name}? Esta acción no se puede deshacer.`)) {
-                return;
-              }
-
-              console.log("[InvoiceForm] eliminar party:", id);
-              handleRemoveParty(id);
-            }}
-          />
-        </div>
-      )}
-
-      <div className="w-full min-w-0 max-w-full overflow-hidden">
-        <InvoiceCurrencySection
-          documentCurrency={documentCurrency}
-          setDocumentCurrency={setDocumentCurrency}
-          targetCurrency={targetCurrency}
-          setTargetCurrency={setTargetCurrency}
-          conversionEnabled={conversionEnabled}
-          setConversionEnabled={setConversionEnabled}
-          useAutoRate={useAutoRate}
-          setUseAutoRate={setUseAutoRate}
-          manualExchangeRate={manualExchangeRate}
-          setManualExchangeRate={setManualExchangeRate}
-          autoExchangeRate={autoExchangeRate}
-          autoRateLoading={autoRateLoading}
-          autoRateError={autoRateError}
-          lastUpdatedAt={lastUpdatedAt}
-          conversionInfo={conversionInfo}
-          baseAmount={baseAmount}
-          facturaTotalFinal={facturaTotalFinal}
-        />
-      </div>
-
-      {docKind !== "NOMINA" && (
-        <div className="w-full min-w-0 max-w-full overflow-hidden">
-          <InvoiceCatalogSection
-            catalogEnabled={catalogEnabled}
-            currentTx={currentTx}
-            isSale={isSale}
-            isPurchase={isPurchase}
-            partyKey={partyKeyActive}
-            partyHasOwnerOrContractor={partyHasOwnerOrContractor}
-            productOptions={productOptions}
-            serviceOptions={serviceOptions}
-            propertyOptions={propertyOptions}
-            selectedCatalogProductId={selectedCatalogProductId}
-            setSelectedCatalogProductId={setSelectedCatalogProductId}
-            selectedCatalogServiceId={selectedCatalogServiceId}
-            setSelectedCatalogServiceId={setSelectedCatalogServiceId}
-            selectedCatalogPropertyId={selectedCatalogPropertyId}
-            setSelectedCatalogPropertyId={setSelectedCatalogPropertyId}
-            showNewPropertyForm={showNewPropertyForm}
-            setShowNewPropertyForm={setShowNewPropertyForm}
-            activePropertyId={activePropertyId}
-            setActivePropertyId={setActivePropertyId}
-            catalogEditor={catalogEditor}
-            setCatalogEditor={setCatalogEditor}
-            productsCatalog={productsCatalog}
-            servicesCatalog={servicesCatalog}
-            propertiesCatalog={propertiesCatalog}
-            addProductFromCatalog={addProductFromCatalog}
-            addServiceFromCatalog={addServiceFromCatalog}
-            addProductFromCatalogAndMaybeActivate={addProductFromCatalogAndMaybeActivate}
-            removeCatalogProduct={removeCatalogProduct}
-            removeCatalogService={removeCatalogService}
-            removeCatalogProperty={removeCatalogProperty}
-            onSaveCatalogRecord={handleSaveCatalogRecord}
-            onSaveProperty={handleSaveProperty}
-            propertyAnnexes={propertyAnnexes}
-            setPropertyAnnexes={setPropertyAnnexesState}
-            annexActiveId={annexActiveId}
-            activeAnnexDocs={activeAnnexDocs}
-            onAnnexesChangeForActive={onAnnexesChangeForActive}
-            addAttachmentFromCatalogStable={addAttachmentFromCatalogStable}
-            removeCatalogAttachmentStable={removeCatalogAttachmentStable}
-          />
-        </div>
-      )}
-
-      <div className="w-full min-w-0 max-w-full overflow-hidden">
-        <InvoiceLinesSection
-          items={items}
-          safeUpdateItem={safeUpdateItem}
-          safeRemoveItem={safeRemoveItem}
-          safeOnItemPhotosChange={safeOnItemPhotosChange}
-        />
-      </div>
-
-      <div className="mt-4 flex justify-end gap-4 border-t pt-3">
-        <div className="text-right">
-          <div className="text-sm">Subtotal (líneas)</div>
-          <div className="font-medium">{itemsSubtotal.toFixed(2)}</div>
-        </div>
-      </div>
-
-      <div className="w-full min-w-0 max-w-full overflow-hidden">
-        <InvoiceTotalsSection
-          docKind={docKind}
-          itemsSubtotal={itemsSubtotal}
-          ivaPercent={ivaPercent}
-          setIvaPercent={setIvaPercent}
-          ivaRetenidoPercent={ivaRetenidoPercent}
-          setIvaRetenidoPercent={setIvaRetenidoPercent}
-          islrPercent={islrPercent}
-          setIslrPercent={setIslrPercent}
-          facturaIvaAmount={facturaIvaAmount}
-          ivaRetenidoAmount={ivaRetenidoAmount}
-          islrAmount={islrAmount}
-          facturaTotalFinal={facturaTotalFinal}
-          documentCurrency={documentCurrency}
-          targetCurrency={targetCurrency}
-          conversionInfo={conversionInfo}
-        />
-      </div>
-
-      <div className="w-full min-w-0 max-w-full overflow-hidden">
-        <label className="mb-1 block text-sm font-medium">Descripción</label>
-        <textarea
-          className="w-full rounded border px-3 py-2"
-          value={description}
-          onChange={(e) => setDescription(e.target.value)}
-          rows={3}
-        />
-      </div>
-
-      <div className="flex flex-col gap-3 sm:flex-row">
-        <button
-          type="submit"
-          className="flex-1 rounded bg-green-600 py-2 text-white hover:bg-green-700"
-        >
-          Guardar cambios
-        </button>
-
-        {onGenerateReports && (
-          <button
-            type="button"
-            onClick={onGenerateReports}
-            className="flex-1 rounded bg-blue-600 py-2 text-white hover:bg-blue-700"
-          >
-            Generar informes
-          </button>
+        {docKind === "NOMINA" && (
+          <section className={styles.section}>
+            <PayrollSection
+              payrollReceipts={payrollReceipts}
+              addPayrollReceipt={addPayrollReceipt}
+              updatePayrollReceipt={updatePayrollReceipt}
+              removePayrollReceipt={removePayrollReceipt}
+              employees={employees}
+              showNewEmployeeForm={showNewEmployeeForm}
+              setShowNewEmployeeForm={setShowNewEmployeeForm}
+              newEmployeeDraft={newEmployeeDraft}
+              setNewEmployeeDraft={setNewEmployeeDraft}
+              employeePhotoPreview={employeePhotoPreview}
+              setEmployeePhotoPreview={setEmployeePhotoPreview}
+              handleNewEmployeePhotoChange={handleNewEmployeePhotoChange}
+              handleRegisterAndUseEmployee={handleRegisterAndUseEmployee}
+              handleUseEmployeeWithoutRegister={handleUseEmployeeWithoutRegister}
+              handleRemoveEmployeeFromTray={handleRemoveEmployeeFromTray}
+              handleEditEmployeeFromTray={handleEditEmployeeFromTray}
+              handleCloneEmployeeFromTray={handleCloneEmployeeFromTray}
+              calculateAgeFromDate={undefined as any}
+              editingEmployeeId={editingEmployeeId}
+              setEditingEmployeeId={setEditingEmployeeId}
+              receiptEmployeeFormIndex={receiptEmployeeFormIndex}
+              setReceiptEmployeeFormIndex={setReceiptEmployeeFormIndex}
+            />
+          </section>
         )}
+
+        {docKind !== "NOMINA" && (
+          <section className={styles.section}>
+            <PartyFormInline
+              currentRole={computedPartyRole}
+              partiesForRole={partiesForRole}
+              selectedPartyId={selectedPartyId}
+              onSelectParty={(id: string) => {
+                setSelectedPartyId(id);
+                resetCatalogSelection();
+              }}
+              onOpenNew={() => {
+                setShowNewPartyForm(true);
+                setEditingPartyId(undefined);
+                setNewPartyDraft({
+                  partyType: "NATURAL",
+                  firstName: "",
+                  lastName: "",
+                  companyName: "",
+                  phone: "",
+                  email: "",
+                  address: "",
+                  city: "",
+                  country: "",
+                  rif: "",
+                  nit: "",
+                  photoDataUrl: undefined,
+                  companyId: "",
+                });
+                setPartyPhotoPreview(undefined);
+                resetCatalogSelection();
+              }}
+              onEditSelected={() => {
+                setEditingPartyId(selectedPartyId || undefined);
+                const found = parties.find((x: any) => x.id === selectedPartyId);
+                if (found) {
+                  setNewPartyDraft({ ...found });
+                  setPartyPhotoPreview(found.photoDataUrl);
+                  setShowNewPartyForm(true);
+                } else {
+                  console.warn("[InvoiceForm] no se encontró party para editar");
+                }
+              }}
+              showNewPartyForm={showNewPartyForm}
+              newPartyDraft={newPartyDraft}
+              setNewPartyDraft={setNewPartyDraft}
+              partyPhotoPreview={partyPhotoPreview}
+              onPhotoChange={handleNewPartyPhotoChange}
+              onSaveDraft={(selectAfterSave?: boolean) => {
+                handleSavePartyDraft(
+                  newPartyDraft,
+                  computedPartyRole,
+                  selectAfterSave,
+                  vm.editingPartyId
+                )
+                  .then((rec: any) => {
+                    if (selectAfterSave && rec && rec.id) {
+                      setSelectedPartyId(rec.id);
+                    }
+                  })
+                  .catch((err: any) => {
+                    console.error("Error guardando party draft:", err);
+                  });
+              }}
+              onCancelForm={() => {
+                handleCancelPartyForm();
+              }}
+              onRemoveParty={(id: string) => {
+                if (!id) return;
+                const found = parties.find((p: any) => p.id === id);
+                if (!found) return;
+
+                if (!confirm(`¿Eliminar a ${found.name}? Esta acción no se puede deshacer.`)) {
+                  return;
+                }
+
+                handleRemoveParty(id);
+              }}
+            />
+          </section>
+        )}
+
+        <section className={styles.section}>
+          <InvoiceCurrencySection
+            documentCurrency={documentCurrency}
+            setDocumentCurrency={setDocumentCurrency}
+            targetCurrency={targetCurrency}
+            setTargetCurrency={setTargetCurrency}
+            conversionEnabled={conversionEnabled}
+            setConversionEnabled={setConversionEnabled}
+            useAutoRate={useAutoRate}
+            setUseAutoRate={setUseAutoRate}
+            manualExchangeRate={manualExchangeRate}
+            setManualExchangeRate={setManualExchangeRate}
+            autoExchangeRate={autoExchangeRate}
+            autoRateLoading={autoRateLoading}
+            autoRateError={autoRateError}
+            lastUpdatedAt={lastUpdatedAt}
+            conversionInfo={conversionInfo}
+            baseAmount={baseAmount}
+            facturaTotalFinal={facturaTotalFinal}
+          />
+        </section>
+
+        {docKind !== "NOMINA" && (
+          <section className={styles.section}>
+            <InvoiceCatalogSection
+              catalogEnabled={catalogEnabled}
+              currentTx={currentTx}
+              isSale={isSale}
+              isPurchase={isPurchase}
+              partyKey={partyKeyActive}
+              partyHasOwnerOrContractor={partyHasOwnerOrContractor}
+              productOptions={productOptions}
+              serviceOptions={serviceOptions}
+              propertyOptions={propertyOptions}
+              selectedCatalogProductId={selectedCatalogProductId}
+              setSelectedCatalogProductId={setSelectedCatalogProductId}
+              selectedCatalogServiceId={selectedCatalogServiceId}
+              setSelectedCatalogServiceId={setSelectedCatalogServiceId}
+              selectedCatalogPropertyId={selectedCatalogPropertyId}
+              setSelectedCatalogPropertyId={setSelectedCatalogPropertyId}
+              showNewPropertyForm={showNewPropertyForm}
+              setShowNewPropertyForm={setShowNewPropertyForm}
+              activePropertyId={activePropertyId}
+              setActivePropertyId={setActivePropertyId}
+              catalogEditor={catalogEditor}
+              setCatalogEditor={setCatalogEditor}
+              productsCatalog={productsCatalog}
+              servicesCatalog={servicesCatalog}
+              propertiesCatalog={propertiesCatalog}
+              addProductFromCatalog={safeAddProductFromCatalog}
+              addServiceFromCatalog={addServiceFromCatalog}
+              addProductFromCatalogAndMaybeActivate={addProductFromCatalogAndMaybeActivate}
+              removeCatalogProduct={removeCatalogProduct}
+              removeCatalogService={removeCatalogService}
+              removeCatalogProperty={removeCatalogProperty}
+              onSaveCatalogRecord={handleSaveCatalogRecord}
+              onSaveProperty={handleSaveProperty}
+              propertyAnnexes={propertyAnnexes}
+              setPropertyAnnexes={setPropertyAnnexesState}
+              annexActiveId={annexActiveId}
+              activeAnnexDocs={activeAnnexDocs}
+              onAnnexesChangeForActive={onAnnexesChangeForActive}
+              addAttachmentFromCatalogStable={addAttachmentFromCatalogStable}
+              removeCatalogAttachmentStable={removeCatalogAttachmentStable}
+            />
+          </section>
+        )}
+
+        <section className={styles.section}>
+          <InvoiceLinesSection
+            items={items}
+            safeUpdateItem={safeUpdateItem}
+            safeRemoveItem={safeRemoveItem}
+            safeOnItemPhotosChange={safeOnItemPhotosChange}
+            invoiceType={invoiceType}
+          />
+        </section>
+
+        <section className={styles.summaryBar}>
+          <div className={styles.summaryTextBlock}>
+            <div className={styles.summaryLabel}>Subtotal (líneas)</div>
+            <div className={styles.summaryValue}>{itemsSubtotal.toFixed(2)}</div>
+          </div>
+        </section>
+
+        <section className={styles.section}>
+          <InvoiceTotalsSection
+            docKind={docKind}
+            itemsSubtotal={itemsSubtotal}
+            ivaPercent={ivaPercent}
+            setIvaPercent={setIvaPercent}
+            ivaRetenidoPercent={ivaRetenidoPercent}
+            setIvaRetenidoPercent={setIvaRetenidoPercent}
+            islrPercent={islrPercent}
+            setIslrPercent={setIslrPercent}
+            facturaIvaAmount={facturaIvaAmount}
+            ivaRetenidoAmount={ivaRetenidoAmount}
+            islrAmount={islrAmount}
+            facturaTotalFinal={facturaTotalFinal}
+            documentCurrency={documentCurrency}
+            targetCurrency={targetCurrency}
+            conversionInfo={conversionInfo}
+          />
+        </section>
+
+        <section className={styles.section}>
+          <label className={styles.label} htmlFor="invoice-description">
+            Descripción
+          </label>
+          <textarea
+            id="invoice-description"
+            className={styles.textarea}
+            value={description}
+            onChange={(e) => setDescription(e.target.value)}
+            rows={4}
+          />
+        </section>
+
+        <div className={styles.actions}>
+          <button type="submit" className={styles.primaryButton}>
+            Guardar cambios
+          </button>
+
+          {onGenerateReports && (
+            <button type="button" onClick={onGenerateReports} className={styles.secondaryButton}>
+              Generar informes
+            </button>
+          )}
+        </div>
       </div>
     </form>
   );

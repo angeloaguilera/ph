@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useEffect, useState } from "react";
+import "./InvoiceDocumentHeaderSection.css";
 
 type Props = {
   docKind: string;
@@ -38,6 +39,9 @@ type Props = {
 
   referenceNumber: string;
   setReferenceNumber: (value: string) => void;
+
+  voucherUrl?: string;
+  setVoucherUrl?: (value: string) => void;
 };
 
 type PreviewKind = "image" | "pdf" | "excel" | "none";
@@ -76,12 +80,6 @@ function getLines(text: string) {
 
 function isNoiseLine(line: string) {
   return FOOTER_NOISE_RE.test(line);
-}
-
-function extractNumericTokens(text: string) {
-  return (text.match(/\d+(?:-\d+)?/g) || [])
-    .map((x) => cleanField(x))
-    .filter(Boolean);
 }
 
 function hasLetters(value: string) {
@@ -379,9 +377,7 @@ function detectHeaderNumbers(text: string) {
   }
 
   if (!control || !invoice) {
-    const allNums = Array.from(
-      new Set(lines.flatMap((line) => docNumsFromLine(line))),
-    );
+    const allNums = Array.from(new Set(lines.flatMap((line) => docNumsFromLine(line))));
 
     if (!control && allNums[0]) control = allNums[0];
     if (!invoice && allNums[1]) invoice = allNums[1];
@@ -467,32 +463,53 @@ function FilePreview({
   if (!url || kind === "none") return null;
 
   return (
-    <div className="w-full max-w-full overflow-hidden rounded-xl border bg-gray-50 p-3">
-      <div className="mb-2 text-sm font-medium text-gray-700">Vista previa</div>
+    <div className="preview-wrapper">
+      <div className="preview-title">Vista previa</div>
 
       {kind === "image" && (
-        <div className="flex w-full justify-center overflow-hidden rounded-lg border bg-white">
-          <img
-            src={url}
-            alt="Vista previa"
-            className="block caja-primera h-auto w-[200px] max-h-[340px] object-contain"
-          />
+        <div className="preview-image-box">
+          <img src={url} alt="Vista previa" className="preview-image" />
         </div>
       )}
 
       {kind === "pdf" && (
-        <div className="overflow-hidden rounded-lg border bg-white">
-          <iframe
-            src={url}
-            title="Vista previa PDF"
-            className="block h-[420px] w-full max-w-full"
-          />
+        <div className="preview-pdf-box">
+          <iframe src={url} title="Vista previa PDF" className="preview-pdf" />
         </div>
       )}
 
       {kind === "excel" && <ExcelPreviewTable rows={excelRows} />}
     </div>
   );
+}
+
+function Field({
+  label,
+  children,
+  className = "",
+}: {
+  label: string;
+  children: React.ReactNode;
+  className?: string;
+}) {
+  return (
+    <div className={className}>
+      <label className="mb-1 block text-sm font-medium text-gray-700">{label}</label>
+      {children}
+    </div>
+  );
+}
+
+function selectClass(disabled: boolean) {
+  return `w-full rounded-md border px-3 py-2 outline-none transition ${
+    disabled ? "cursor-not-allowed bg-gray-100 opacity-70" : "bg-white"
+  }`;
+}
+
+function inputClass(disabled: boolean) {
+  return `w-full rounded-md border px-3 py-2 outline-none transition ${
+    disabled ? "cursor-not-allowed bg-gray-100 opacity-70" : "bg-white"
+  }`;
 }
 
 export default function InvoiceDocumentHeaderSection({
@@ -520,13 +537,22 @@ export default function InvoiceDocumentHeaderSection({
   setPaymentType,
   referenceNumber,
   setReferenceNumber,
+  voucherUrl,
+  setVoucherUrl,
 }: Props) {
   const [isReading, setIsReading] = useState(false);
+  const [isUploadingVoucher, setIsUploadingVoucher] = useState(false);
   const [progress, setProgress] = useState(0);
   const [previewUrl, setPreviewUrl] = useState<string>("");
   const [previewKind, setPreviewKind] = useState<PreviewKind>("none");
   const [fileName, setFileName] = useState<string>("");
   const [excelRows, setExcelRows] = useState<string[][]>([]);
+  const [localVoucherUrl, setLocalVoucherUrl] = useState<string>("");
+  const [isInvoiceCanceled, setIsInvoiceCanceled] = useState(false);
+  const [hasUserSelectedDate, setHasUserSelectedDate] = useState(false);
+
+  const effectiveVoucherUrl = voucherUrl ?? localVoucherUrl;
+  const invoiceStatusValue = isInvoiceCanceled ? "ANULADA" : "NO_ANULADA";
 
   useEffect(() => {
     return () => {
@@ -534,7 +560,48 @@ export default function InvoiceDocumentHeaderSection({
     };
   }, [previewUrl]);
 
+  const setVoucherPath = (url: string) => {
+    setLocalVoucherUrl(url);
+    setVoucherUrl?.(url);
+  };
+
+  const handleDateChange = (value: string) => {
+    setHasUserSelectedDate(true);
+    setDocumentDateTime(value);
+  };
+
+  const uploadVoucher = async (file: File) => {
+    if (isInvoiceCanceled) return "";
+
+    setIsUploadingVoucher(true);
+    try {
+      const formData = new FormData();
+      formData.append("file", file);
+
+      const res = await fetch("/api/vouchers", {
+        method: "POST",
+        body: formData,
+      });
+
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        throw new Error(data?.error || "No se pudo guardar el comprobante");
+      }
+
+      const data = await res.json();
+      const url = String(data?.url || "");
+      if (url) {
+        setVoucherPath(url);
+      }
+      return url;
+    } finally {
+      setIsUploadingVoucher(false);
+    }
+  };
+
   const applyDetectedValues = (rawText: string, sourceFileName?: string) => {
+    if (isInvoiceCanceled) return;
+
     const text = extractUsefulTextFromLines(rawText);
 
     const detectedDocKind = detectDocKind(text);
@@ -550,7 +617,9 @@ export default function InvoiceDocumentHeaderSection({
     if (detectedPaymentType) setPaymentType(detectedPaymentType as any);
 
     const detectedDateTime = detectDocumentDate(text);
-    if (detectedDateTime) setDocumentDateTime(detectedDateTime);
+    if (detectedDateTime && !hasUserSelectedDate && !documentDateTime) {
+      setDocumentDateTime(detectedDateTime);
+    }
 
     const detectedNumeroFactura = detectInvoiceNumber(text);
     if (detectedNumeroFactura) setNumeroFactura(detectedNumeroFactura);
@@ -572,9 +641,7 @@ export default function InvoiceDocumentHeaderSection({
         /\bentidad\b/i,
         /\bcuenta\b/i,
       ]) ||
-      findFirstMatch(text, [
-        /(?:banco|entidad bancaria|entidad|cuenta)\s*[:\-]\s*([^\n\r]+)/i,
-      ]);
+      findFirstMatch(text, [/(?:banco|entidad bancaria|entidad|cuenta)\s*[:\-]\s*([^\n\r]+)/i]);
 
     if (detectedBank) setBank(detectedBank);
 
@@ -636,14 +703,10 @@ export default function InvoiceDocumentHeaderSection({
       defval: "",
     }) as any[][];
 
-    const normalizedRows = rows.map((row) =>
-      row.map((cell) => String(cell ?? "").trim()),
-    );
+    const normalizedRows = rows.map((row) => row.map((cell) => String(cell ?? "").trim()));
 
     const text = normalizeText(
-      normalizedRows
-        .map((row) => row.filter(Boolean).join(" "))
-        .join("\n"),
+      normalizedRows.map((row) => row.filter(Boolean).join(" ")).join("\n"),
     );
 
     return { text, rows: normalizedRows };
@@ -721,6 +784,8 @@ export default function InvoiceDocumentHeaderSection({
   };
 
   const handleFile = async (file: File) => {
+    if (isInvoiceCanceled) return;
+
     setIsReading(true);
     setProgress(0);
     setExcelRows([]);
@@ -745,7 +810,7 @@ export default function InvoiceDocumentHeaderSection({
         text = excel.text;
         setExcelRows(excel.rows);
       } else {
-        alert("Formato no soportado. Usa imagen, PDF, XLS o XLSX.");
+        alert("Formato no soportado. Usa imagen, PDF o Excel.");
         return;
       }
 
@@ -762,238 +827,299 @@ export default function InvoiceDocumentHeaderSection({
   };
 
   return (
-    <div className="w-full max-w-full space-y-4 overflow-hidden rounded-xl border p-4">
-      <div className="space-y-2">
-        <label className="block text-sm font-medium">
-          Cargar imagen, PDF o Excel
-        </label>
+    <div className="w-full max-w-full overflow-hidden rounded-xl border bg-white p-4">
+      <div className="space-y-4">
+        <div className="section-card">
+          <h3 className="section-title">Cargar comprobante</h3>
 
-        <input
-          type="file"
-          accept=".png,.jpg,.jpeg,.webp,.bmp,.tif,.tiff,.pdf,.xls,.xlsx"
-          multiple={false}
-          className="block w-full max-w-full rounded-md border px-3 py-2 text-sm file:mr-4 file:rounded-md file:border-0 file:bg-gray-100 file:px-4 file:py-2 file:text-sm file:font-medium"
-          onChange={async (e) => {
-            const file = e.target.files?.[0];
-            if (!file) return;
+          <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
+            <div className="xl:col-span-2">
+              <label className="mb-1 block text-sm font-medium text-gray-700">
+                Cargar comprobante, imagen, PDF o Excel
+              </label>
 
-            if (previewUrl) URL.revokeObjectURL(previewUrl);
+              <input
+                type="file"
+                accept=".png,.jpg,.jpeg,.webp,.bmp,.tif,.tiff,.pdf,.xls,.xlsx"
+                multiple={false}
+                disabled={isInvoiceCanceled}
+                className={`block w-full max-w-full rounded-md border px-3 py-2 text-sm file:mr-4 file:rounded-md file:border-0 file:bg-gray-100 file:px-4 file:py-2 file:text-sm file:font-medium ${
+                  isInvoiceCanceled ? "cursor-not-allowed bg-gray-100 opacity-70" : ""
+                }`}
+                onChange={async (e) => {
+                  if (isInvoiceCanceled) {
+                    e.target.value = "";
+                    return;
+                  }
 
-            const url = URL.createObjectURL(file);
-            setPreviewUrl(url);
-            setFileName(file.name);
+                  const file = e.target.files?.[0];
+                  if (!file) return;
 
-            const ext = file.name.split(".").pop()?.toLowerCase() || "";
-            if (
-              file.type.startsWith("image/") ||
-              ["png", "jpg", "jpeg", "webp", "bmp", "tif", "tiff"].includes(ext)
-            ) {
-              setPreviewKind("image");
-            } else if (file.type === "application/pdf" || ext === "pdf") {
-              setPreviewKind("pdf");
-            } else if (
-              file.type.includes("sheet") ||
-              file.type.includes("excel") ||
-              ["xls", "xlsx"].includes(ext)
-            ) {
-              setPreviewKind("excel");
-            } else {
-              setPreviewKind("none");
-            }
+                  if (previewUrl) URL.revokeObjectURL(previewUrl);
 
-            await handleFile(file);
-            e.target.value = "";
-          }}
-        />
+                  const url = URL.createObjectURL(file);
+                  setPreviewUrl(url);
+                  setFileName(file.name);
 
-        {fileName && (
-          <div className="break-words text-sm text-gray-600">
-            Archivo: {fileName}
+                  const ext = file.name.split(".").pop()?.toLowerCase() || "";
+                  if (
+                    file.type.startsWith("image/") ||
+                    ["png", "jpg", "jpeg", "webp", "bmp", "tif", "tiff"].includes(ext)
+                  ) {
+                    setPreviewKind("image");
+                  } else if (file.type === "application/pdf" || ext === "pdf") {
+                    setPreviewKind("pdf");
+                  } else if (
+                    file.type.includes("sheet") ||
+                    file.type.includes("excel") ||
+                    ["xls", "xlsx"].includes(ext)
+                  ) {
+                    setPreviewKind("excel");
+                  } else {
+                    setPreviewKind("none");
+                  }
+
+                  try {
+                    await uploadVoucher(file);
+                    await handleFile(file);
+                  } catch (error) {
+                    console.error(error);
+                    alert("No se pudo guardar el comprobante en /public/vouchers.");
+                  } finally {
+                    e.target.value = "";
+                  }
+                }}
+              />
+
+              {fileName && (
+                <div className="mt-2 break-words text-sm text-gray-600">Archivo: {fileName}</div>
+              )}
+
+              {effectiveVoucherUrl && (
+                <div className="mt-1 break-words text-xs text-green-700">
+                  Comprobante guardado: {effectiveVoucherUrl}
+                </div>
+              )}
+
+              <input type="hidden" name="voucherUrl" value={effectiveVoucherUrl} />
+            </div>
+
+            <div className="xl:col-span-2">
+              <FilePreview kind={previewKind} url={previewUrl} excelRows={excelRows} />
+            </div>
+
+            {(isReading || isUploadingVoucher) && (
+              <div className="xl:col-span-2 text-sm text-gray-600">
+                {isUploadingVoucher
+                  ? "Guardando comprobante..."
+                  : `Leyendo archivo... ${progress}%`}
+              </div>
+            )}
+          </div>
+        </div>
+
+        <div className="section-card">
+          <h3 className="section-title">Datos principales</h3>
+
+          <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
+            <Field label="Comprobante">
+              <select
+                value={docKind}
+                onChange={(e) => setDocKind(e.target.value as any)}
+                disabled={isInvoiceCanceled}
+                className={selectClass(isInvoiceCanceled)}
+              >
+                <option value="FACTURA">Factura</option>
+                <option value="RECIBO">Recibo</option>
+                <option value="NOMINA">Nómina</option>
+              </select>
+            </Field>
+
+            {docKind !== "NOMINA" && (
+              <Field label="Tipo">
+                <select
+                  value={invoiceType}
+                  onChange={(e) => onInvoiceTypeChange(e.target.value as any)}
+                  disabled={isInvoiceCanceled}
+                  className={selectClass(isInvoiceCanceled)}
+                >
+                  <option value="VENTA">Venta</option>
+                  <option value="COMPRA">Compra</option>
+                </select>
+              </Field>
+            )}
+
+            <Field
+              label={
+                docKind === "FACTURA"
+                  ? "Nombre de la factura"
+                  : docKind === "NOMINA"
+                    ? "Nombre del recibo nómina"
+                    : "Nombre del recibo"
+              }
+              className="md:col-span-2 xl:col-span-3"
+            >
+              <input
+                className={inputClass(isInvoiceCanceled)}
+                value={invoiceName}
+                onChange={(e) => setInvoiceName(e.target.value)}
+                disabled={isInvoiceCanceled}
+                placeholder={
+                  docKind === "FACTURA" ? "Ej. Factura 26-12-2025" : "Ej. Recibo 26-12-2025"
+                }
+              />
+            </Field>
+
+            <Field label="Fecha y hora (con segundos)">
+              <input
+                type="datetime-local"
+                step={1}
+                className={inputClass(isInvoiceCanceled)}
+                value={documentDateTime}
+                onChange={(e) => handleDateChange(e.target.value)}
+                disabled={isInvoiceCanceled}
+                name="documentDateTime"
+              />
+            </Field>
+          </div>
+
+          <input type="hidden" name="documentDateTime" value={documentDateTime} />
+        </div>
+
+        {docKind === "RECIBO" && (
+          <div className="section-card">
+            <h3 className="section-title">Datos del recibo</h3>
+
+            <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+              <Field label="Número de recibo" className="md:col-span-2">
+                <input
+                  className={inputClass(isInvoiceCanceled)}
+                  value={numeroRecibo}
+                  onChange={(e) => setNumeroRecibo(e.target.value)}
+                  disabled={isInvoiceCanceled}
+                  placeholder="Ej. R-00001234"
+                />
+              </Field>
+            </div>
           </div>
         )}
 
-        <div className="w-full max-w-full overflow-hidden">
-          <FilePreview kind={previewKind} url={previewUrl} excelRows={excelRows} />
-        </div>
+        {docKind === "FACTURA" && (
+          <div className="section-card">
+            <h3 className="section-title">Datos de la factura</h3>
 
-        {isReading && (
-          <div className="text-sm text-gray-600">Leyendo archivo... {progress}%</div>
+            <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
+              <Field label="Número de la factura">
+                <input
+                  className={inputClass(isInvoiceCanceled)}
+                  value={numeroFactura}
+                  onChange={(e) => setNumeroFactura(e.target.value)}
+                  disabled={isInvoiceCanceled}
+                  placeholder="Ej. 00-006400"
+                />
+              </Field>
+
+              <Field label="Número de control">
+                <input
+                  className={inputClass(isInvoiceCanceled)}
+                  value={numeroControl}
+                  onChange={(e) => setNumeroControl(e.target.value)}
+                  disabled={isInvoiceCanceled}
+                  placeholder="Ej. 00-006300"
+                />
+              </Field>
+
+              <Field label="Estado de la factura" className="md:col-span-2 xl:col-span-3">
+                <select
+                  value={invoiceStatusValue}
+                  onChange={(e) => setIsInvoiceCanceled(e.target.value === "ANULADA")}
+                  className={selectClass(false)}
+                >
+                  <option value="NO_ANULADA">No anulada</option>
+                  <option value="ANULADA">Factura anulada</option>
+                </select>
+              </Field>
+
+              {isInvoiceCanceled && (
+                <div className="md:col-span-2 xl:col-span-3 rounded-md border border-red-300 bg-red-50 px-3 py-2 text-sm text-red-700">
+                  Factura anulada activada. Todo el formulario queda deshabilitado.
+                </div>
+              )}
+            </div>
+          </div>
         )}
-      </div>
 
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-        <div>
-          <label className="mb-1 block text-sm font-medium">Comprobante</label>
-          <select
-            value={docKind}
-            onChange={(e) => setDocKind(e.target.value as any)}
-            className="w-full rounded-md border px-3 py-2"
-          >
-            <option value="FACTURA">Factura</option>
-            <option value="RECIBO">Recibo</option>
-            <option value="NOMINA">Nómina</option>
-          </select>
-        </div>
+        <input type="hidden" name="invoiceStatus" value={invoiceStatusValue} />
 
         {docKind !== "NOMINA" && (
-          <div>
-            <label className="mb-1 block text-sm font-medium">Tipo</label>
-            <select
-              value={invoiceType}
-              onChange={(e) => onInvoiceTypeChange(e.target.value as any)}
-              className="w-full rounded-md border px-3 py-2"
-            >
-              <option value="VENTA">Venta</option>
-              <option value="COMPRA">Compra</option>
-            </select>
+          <div className="section-card">
+            <h3 className="section-title">Destino y forma de pago</h3>
+
+            <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
+              <Field label="Destino">
+                <select
+                  className={selectClass(isInvoiceCanceled)}
+                  value={destination}
+                  onChange={(e) => setDestination(e.target.value as any)}
+                  disabled={isInvoiceCanceled}
+                >
+                  <option value="BANCO">Banco</option>
+                  <option value="CAJA">Caja</option>
+                </select>
+              </Field>
+
+              {destination === "BANCO" && (
+                <>
+                  <Field label="Banco">
+                    <input
+                      className={inputClass(isInvoiceCanceled)}
+                      value={bank}
+                      onChange={(e) => setBank(e.target.value)}
+                      disabled={isInvoiceCanceled}
+                    />
+                  </Field>
+
+                  <Field label="Tipo de pago">
+                    <select
+                      className={selectClass(isInvoiceCanceled)}
+                      value={paymentType}
+                      onChange={(e) => setPaymentType(e.target.value as any)}
+                      disabled={isInvoiceCanceled}
+                    >
+                      <option value="">-- Selecciona --</option>
+                      <option value="DEBITO">Débito</option>
+                      <option value="TRANSFERENCIA">Transferencia</option>
+                      <option value="CREDITO">Crédito</option>
+                      <option value="PAGOMOVIL">Pago móvil</option>
+                    </select>
+                  </Field>
+
+                  <Field label="Número de referencia" className="md:col-span-2 xl:col-span-3">
+                    <input
+                      className={inputClass(isInvoiceCanceled)}
+                      value={referenceNumber}
+                      onChange={(e) => setReferenceNumber(e.target.value)}
+                      disabled={isInvoiceCanceled}
+                      placeholder="Ej. 1234567890"
+                    />
+                  </Field>
+                </>
+              )}
+
+              {destination === "CAJA" && (
+                <Field label="Caja" className="md:col-span-2 xl:col-span-2">
+                  <input
+                    className={inputClass(isInvoiceCanceled)}
+                    value={caja}
+                    onChange={(e) => setCaja(e.target.value)}
+                    disabled={isInvoiceCanceled}
+                  />
+                </Field>
+              )}
+            </div>
           </div>
         )}
       </div>
-
-      <div>
-        <label className="mb-1 block text-sm font-medium">
-          {docKind === "FACTURA"
-            ? "Nombre de la factura"
-            : docKind === "NOMINA"
-              ? "Nombre del recibo nómina"
-              : "Nombre del recibo"}
-        </label>
-        <input
-          className="w-full rounded-md border px-3 py-2"
-          value={invoiceName}
-          onChange={(e) => setInvoiceName(e.target.value)}
-          placeholder={
-            docKind === "FACTURA"
-              ? "Ej. Factura 26-12-2025"
-              : "Ej. Recibo 26-12-2025"
-          }
-        />
-      </div>
-
-      <div>
-        <label className="mb-1 block text-sm font-medium">
-          Fecha y hora (con segundos)
-        </label>
-        <input
-          type="datetime-local"
-          step={1}
-          className="w-full rounded-md border px-3 py-2"
-          value={documentDateTime}
-          onChange={(e) => setDocumentDateTime(e.target.value)}
-          name="documentDateTime"
-        />
-      </div>
-
-      <input type="hidden" name="documentDateTime" value={documentDateTime} />
-
-      {docKind === "RECIBO" && (
-        <div>
-          <label className="mb-1 block text-sm font-medium">
-            Número de recibo
-          </label>
-          <input
-            className="w-full rounded-md border px-3 py-2"
-            value={numeroRecibo}
-            onChange={(e) => setNumeroRecibo(e.target.value)}
-            placeholder="Ej. R-00001234"
-          />
-        </div>
-      )}
-
-      {docKind === "FACTURA" && (
-        <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
-          <div>
-            <label className="mb-1 block text-sm font-medium">
-              Número de la factura
-            </label>
-            <input
-              className="w-full rounded-md border px-3 py-2"
-              value={numeroFactura}
-              onChange={(e) => setNumeroFactura(e.target.value)}
-              placeholder="Ej. 00-006400"
-            />
-          </div>
-
-          <div>
-            <label className="mb-1 block text-sm font-medium">
-              Número de control
-            </label>
-            <input
-              className="w-full rounded-md border px-3 py-2"
-              value={numeroControl}
-              onChange={(e) => setNumeroControl(e.target.value)}
-              placeholder="Ej. 00-006300"
-            />
-          </div>
-        </div>
-      )}
-
-      {docKind !== "NOMINA" && (
-        <div>
-          <label className="mb-1 block text-sm font-medium">Destino</label>
-          <select
-            className="w-full rounded-md border px-3 py-2"
-            value={destination}
-            onChange={(e) => setDestination(e.target.value as any)}
-          >
-            <option value="BANCO">Banco</option>
-            <option value="CAJA">Caja</option>
-          </select>
-        </div>
-      )}
-
-      {docKind !== "NOMINA" && destination === "BANCO" && (
-        <>
-          <div>
-            <label className="mb-1 block text-sm font-medium">Banco</label>
-            <input
-              className="w-full rounded-md border px-3 py-2"
-              value={bank}
-              onChange={(e) => setBank(e.target.value)}
-            />
-          </div>
-
-          <div>
-            <label className="mb-1 block text-sm font-medium">
-              Tipo de pago
-            </label>
-            <select
-              className="w-full rounded-md border px-3 py-2"
-              value={paymentType}
-              onChange={(e) => setPaymentType(e.target.value as any)}
-            >
-              <option value="">-- Selecciona --</option>
-              <option value="DEBITO">Débito</option>
-              <option value="TRANSFERENCIA">Transferencia</option>
-              <option value="CREDITO">Crédito</option>
-              <option value="PAGOMOVIL">Pago móvil</option>
-            </select>
-          </div>
-
-          <div>
-            <label className="mb-1 block text-sm font-medium">
-              Número de referencia
-            </label>
-            <input
-              className="w-full rounded-md border px-3 py-2"
-              value={referenceNumber}
-              onChange={(e) => setReferenceNumber(e.target.value)}
-              placeholder="Ej. 1234567890"
-            />
-          </div>
-        </>
-      )}
-
-      {docKind !== "NOMINA" && destination === "CAJA" && (
-        <div>
-          <label className="mb-1 block text-sm font-medium">Caja</label>
-          <input
-            className="w-full rounded-md border px-3 py-2"
-            value={caja}
-            onChange={(e) => setCaja(e.target.value)}
-          />
-        </div>
-      )}
     </div>
   );
 }

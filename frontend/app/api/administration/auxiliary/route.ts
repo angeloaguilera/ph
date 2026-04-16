@@ -25,6 +25,7 @@ async function writeData(arr: any[]) {
 function genId() {
   return `${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
 }
+
 function genChecklistId() {
   return `c-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 }
@@ -77,6 +78,8 @@ function normalizeChecklist(items: any): any[] {
  * - role: "PROVEEDOR" | "CLIENTE" | otros (por default "PROVEEDOR")
  * - companyId: si no existe se copia el id (así siempre hay companyId)
  * - checklist: array normalizado (ver normalizeChecklist)
+ * - actividadEconomica: campo nuevo
+ * - condicionRetencion: campo nuevo
  *
  * ADICIONAL: si el objeto trae flags como isCopropietario / isProveedorContratista
  * los convertimos en items de checklist (con meta.defaultTargets).
@@ -142,6 +145,19 @@ function normalizeAux(item: any) {
     address: item.address ?? null,
     city: item.city ?? null,
     country: item.country ?? null,
+
+    actividadEconomica:
+      item.actividadEconomica ??
+      item.activityEconomica ??
+      item.actividad_economica ??
+      null,
+
+    condicionRetencion:
+      item.condicionRetencion ??
+      item.retentionCondition ??
+      item.condicion_retencion ??
+      null,
+
     meta: item.meta ?? {},
     checklist,
     createdAt: item.createdAt ?? now,
@@ -163,13 +179,18 @@ export async function GET(req: Request) {
     items = items.map((it: any) => normalizeAux(it));
 
     if (role) {
-      items = items.filter((it: any) => String((it.role ?? "").toString()).toUpperCase() === String(role).toUpperCase());
+      items = items.filter(
+        (it: any) => String((it.role ?? "").toString()).toUpperCase() === String(role).toUpperCase()
+      );
     }
     if (companyId) {
       items = items.filter((it: any) => String(it.companyId ?? "") === String(companyId));
     }
     if (id) {
-      items = items.filter((it: any) => String(it.id ?? "") === String(id) || String(it.companyId ?? "") === String(id));
+      items = items.filter(
+        (it: any) =>
+          String(it.id ?? "") === String(id) || String(it.companyId ?? "") === String(id)
+      );
     }
     if (q) {
       const qLower = q.toString().toLowerCase();
@@ -191,7 +212,12 @@ export async function POST(req: Request) {
 
     // replace full dataset
     if (action === "replace") {
-      const arr = Array.isArray(body.items) ? body.items : Array.isArray(body.auxiliaries) ? body.auxiliaries : data;
+      const arr = Array.isArray(body.items)
+        ? body.items
+        : Array.isArray(body.auxiliaries)
+          ? body.auxiliaries
+          : data;
+
       const next = arr.map((it: any) => normalizeAux(it));
       await writeData(next);
       return NextResponse.json({ ok: true, items: next });
@@ -201,7 +227,10 @@ export async function POST(req: Request) {
     if (action === "delete") {
       const id = body?.id;
       if (!id) return NextResponse.json({ ok: false, error: "Missing id" }, { status: 400 });
-      const next = data.filter((i: any) => String(i.id) !== String(id) && String(i.companyId ?? "") !== String(id));
+
+      const next = data.filter(
+        (i: any) => String(i.id) !== String(id) && String(i.companyId ?? "") !== String(id)
+      );
       await writeData(next);
       return NextResponse.json({ ok: true, id, items: next });
     }
@@ -210,12 +239,16 @@ export async function POST(req: Request) {
     if (action === "upsert_checklist") {
       const partyId = body?.partyId ?? body?.id;
       const checklistRaw = body?.checklist ?? body?.items ?? [];
-      if (!partyId) return NextResponse.json({ ok: false, error: "Missing partyId" }, { status: 400 });
+      if (!partyId) {
+        return NextResponse.json({ ok: false, error: "Missing partyId" }, { status: 400 });
+      }
 
       const normalizedChecklist = normalizeChecklist(checklistRaw);
 
       // buscar por id o companyId
-      const idx = data.findIndex((d: any) => String(d.id) === String(partyId) || String(d.companyId ?? "") === String(partyId));
+      const idx = data.findIndex(
+        (d: any) => String(d.id) === String(partyId) || String(d.companyId ?? "") === String(partyId)
+      );
 
       let updatedItem;
       if (idx >= 0) {
@@ -239,7 +272,11 @@ export async function POST(req: Request) {
       }
 
       await writeData(data);
-      return NextResponse.json({ ok: true, item: normalizeAux(updatedItem), items: data.map((d: any) => normalizeAux(d)) });
+      return NextResponse.json({
+        ok: true,
+        item: normalizeAux(updatedItem),
+        items: data.map((d: any) => normalizeAux(d)),
+      });
     }
 
     // upsert single auxiliary record (posible item.checklist incluido)
@@ -255,7 +292,9 @@ export async function POST(req: Request) {
       const normalizedId = String(item.id ?? "");
       const normalizedCompanyId = String(item.companyId ?? "");
       const idx = data.findIndex(
-        (d: any) => (normalizedId && String(d.id) === normalizedId) || (normalizedCompanyId && String(d.companyId ?? "") === normalizedCompanyId)
+        (d: any) =>
+          (normalizedId && String(d.id) === normalizedId) ||
+          (normalizedCompanyId && String(d.companyId ?? "") === normalizedCompanyId)
       );
 
       // keep track if caller explicitly provided checklist OR provided flags that imply checklist changes
@@ -264,7 +303,7 @@ export async function POST(req: Request) {
         Object.prototype.hasOwnProperty.call(item, "isCopropietario") ||
         Object.prototype.hasOwnProperty.call(item, "isProveedorContratista");
 
-      // build normalized object (this will set id/companyId/createdAt/updatedAt and normalize checklist if provided)
+      // build normalized object
       const normalized = normalizeAux({ ...item, role: providedRole });
 
       // If the caller DID NOT provide a checklist (nor flags) but the record exists, preserve existing checklist

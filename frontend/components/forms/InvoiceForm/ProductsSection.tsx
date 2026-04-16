@@ -27,6 +27,48 @@ export default function ProductsSection({
   removeCatalogProduct,
   setCatalogEditor,
 }: Props) {
+  const getContableCategory = () =>
+    currentTx === "venta" ? "ingresos" : "gasto";
+
+  const openCreateProduct = () => {
+    if (!partyKey) {
+      alert(
+        "Seleccione primero un cliente/proveedor para asignar la empresa al producto."
+      );
+      return;
+    }
+
+    const categoriaContable = getContableCategory();
+
+    setCatalogEditor({
+      kind: "product",
+      mode: "create",
+      rec: {
+        companyId: partyKey,
+        kind: "PRODUCT",
+        checklist: [],
+        isPropietario: false,
+        isProveedorContratista: false,
+        propietario: false,
+        contratista: false,
+
+        categoriaContable,
+        categoria_contable: categoriaContable,
+        accountCategory: categoriaContable,
+        contableCategory: categoriaContable,
+
+        meta: {
+          transactionType: currentTx,
+          companyId: partyKey,
+          categoriaContable,
+          categoria_contable: categoriaContable,
+          accountCategory: categoriaContable,
+          contableCategory: categoriaContable,
+        },
+      },
+    });
+  };
+
   useEffect(() => {
     const cur = selectedCatalogProductId;
     if (!cur) return;
@@ -44,44 +86,26 @@ export default function ProductsSection({
     <div className="mb-3 mt-3">
       <div className="mb-3 grid grid-cols-2 gap-4 items-end">
         <div>
-          <label className="block text-sm font-medium mb-1">Productos (Catálogo)</label>
+          <label className="block text-sm font-medium mb-1">
+            Productos (Catálogo)
+          </label>
+
           <div className="flex gap-2">
             <select
               className="flex-1 border rounded px-2 py-1"
               value={selectedCatalogProductId}
               onChange={(e) => {
                 if (!catalogEnabled) {
-                  alert("Selecciona primero un cliente/proveedor (con companyId) para usar el catálogo.");
+                  alert(
+                    "Selecciona primero un cliente/proveedor (con companyId) para usar el catálogo."
+                  );
                   return;
                 }
 
                 const v = e.target.value;
 
                 if (v === "__create__") {
-                  const cid = partyKey;
-                  if (!cid) {
-                    alert("Seleccione primero un cliente/proveedor para asignar la empresa al producto.");
-                    return;
-                  }
-
-                  setCatalogEditor({
-                    kind: "product",
-                    mode: "create",
-                    rec: {
-                      companyId: cid,
-                      kind: "PRODUCT",
-                      checklist: [],
-                      isPropietario: false,
-                      isProveedorContratista: false,
-                      propietario: false,
-                      contratista: false,
-                      meta: {
-                        transactionType: currentTx,
-                        companyId: cid,
-                      },
-                    },
-                  });
-
+                  openCreateProduct();
                   setSelectedCatalogProductId("");
                   return;
                 }
@@ -108,39 +132,28 @@ export default function ProductsSection({
               type="button"
               onClick={() => {
                 if (!catalogEnabled) {
-                  alert("Selecciona primero un cliente/proveedor (con companyId) para agregar productos.");
+                  alert(
+                    "Selecciona primero un cliente/proveedor (con companyId) para agregar productos."
+                  );
                   return;
                 }
 
                 if (!selectedCatalogProductId) {
-                  setCatalogEditor({
-                    kind: "product",
-                    mode: "create",
-                    rec: {
-                      companyId: partyKey,
-                      kind: "PRODUCT",
-                      checklist: [],
-                      isPropietario: false,
-                      isProveedorContratista: false,
-                      propietario: false,
-                      contratista: false,
-                      meta: {
-                        transactionType: currentTx,
-                        companyId: partyKey,
-                      },
-                    },
-                  });
+                  openCreateProduct();
                   return;
                 }
 
                 const valid = (productOptions || []).some(
                   (p: any) =>
                     String(p.id) === String(selectedCatalogProductId) ||
-                    String(p.masterId ?? p.id) === String(selectedCatalogProductId)
+                    String(p.masterId ?? p.id) ===
+                      String(selectedCatalogProductId)
                 );
 
                 if (!valid) {
-                  alert("El producto seleccionado no pertenece a la empresa asociada al cliente/proveedor actual.");
+                  alert(
+                    "El producto seleccionado no pertenece a la empresa asociada al cliente/proveedor actual."
+                  );
                   return;
                 }
 
@@ -157,7 +170,9 @@ export default function ProductsSection({
               type="button"
               onClick={() => {
                 if (!catalogEnabled) {
-                  alert("Selecciona primero un cliente/proveedor (con companyId) para eliminar productos.");
+                  alert(
+                    "Selecciona primero un cliente/proveedor (con companyId) para eliminar productos."
+                  );
                   return;
                 }
 
@@ -171,7 +186,9 @@ export default function ProductsSection({
                 );
 
                 if (!prod || String(prod.companyId ?? "") !== String(partyKey)) {
-                  alert("Solo se pueden eliminar productos del catálogo vinculados a la empresa del cliente/proveedor actual.");
+                  alert(
+                    "Solo se pueden eliminar productos del catálogo vinculados a la empresa del cliente/proveedor actual."
+                  );
                   return;
                 }
 
@@ -187,7 +204,8 @@ export default function ProductsSection({
 
           {!catalogEnabled && (
             <div className="text-xs text-gray-500 mt-1">
-              Selecciona un cliente/proveedor con companyId para habilitar productos y servicios.
+              Selecciona un cliente/proveedor con companyId para habilitar
+              productos y servicios.
             </div>
           )}
         </div>

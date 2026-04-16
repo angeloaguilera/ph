@@ -73,10 +73,7 @@ function hasOwnerOrContractorMarker(source: any): boolean {
         return true;
       }
 
-      if (
-        item?.done === true &&
-        (text.includes("propiet") || text.includes("contrat"))
-      ) {
+      if (item?.done === true && (text.includes("propiet") || text.includes("contrat"))) {
         return true;
       }
     }
@@ -103,6 +100,7 @@ export default function useParties(initialParty?: Partial<PartyInfo>) {
     email: initialParty?.email ?? "",
     address: initialParty?.address ?? "",
     city: initialParty?.city ?? "",
+    state: (initialParty as any)?.state ?? "",
     country: initialParty?.country ?? "",
     rif: initialParty?.rif ?? "",
     nit: initialParty?.nit ?? "",
@@ -110,44 +108,50 @@ export default function useParties(initialParty?: Partial<PartyInfo>) {
     companyId: (initialParty as any)?.companyId ?? undefined,
   };
 
-  const [partyInfo, setPartyInfo] = useState<PartyInfo>(defaultParty);
-  const [parties, setParties] = useState<PartyRecord[]>([]);
-  const [selectedPartyId, setSelectedPartyId] = useState<string | "">("");
-  const [showNewPartyForm, setShowNewPartyForm] = useState(false);
-
-  type NewPartyDraft = Partial<PartyRecord> & {
-    firstName?: string;
-    lastName?: string;
-    companyName?: string;
-    isPropietario?: boolean;
-    isProveedorContratista?: boolean;
-  };
-
-  const [newPartyDraft, setNewPartyDraft] = useState<NewPartyDraft>({
+  const emptyDraft = {
     partyType: "NATURAL",
     firstName: "",
     lastName: "",
     companyName: "",
+    name: "",
     phone: "",
     email: "",
     address: "",
     city: "",
+    state: "",
     country: "",
     rif: "",
     nit: "",
-    photoDataUrl: undefined,
+    photoDataUrl: undefined as string | undefined,
     companyId: "",
     checklist: [] as unknown as PartyChecklist,
     isPropietario: false,
     isProveedorContratista: false,
-  });
+    actividadEconomica: "",
+    condicionRetencion: "",
+    retencion: "",
+    activityEconomic: "",
+    condition: "",
+    retentionNote: "",
+    rifMatchedLine: "",
+    rawText: "",
+    needsManualReview: false,
+    documentType: "rif",
+  };
 
+  const [partyInfo, setPartyInfo] = useState<PartyInfo>(defaultParty);
+  const [parties, setParties] = useState<PartyRecord[]>([]);
+  const [selectedPartyId, setSelectedPartyId] = useState<string | "">("");
+  const [showNewPartyForm, setShowNewPartyForm] = useState(false);
+  const [newPartyDraft, setNewPartyDraft] = useState<any>(emptyDraft);
   const [partyPhotoPreview, setPartyPhotoPreview] = useState<string | undefined>(
     defaultParty.photoDataUrl
   );
   const [editingPartyId, setEditingPartyId] = useState<string | undefined>(undefined);
   const [receiptPartyRole, setReceiptPartyRole] = useState<PartyRole>("CLIENTE");
   const pendingSavedRef = useRef<Map<string, PartyRecord>>(new Map());
+
+  type NewPartyDraft = typeof emptyDraft;
 
   const normalizeChecklistRaw = useCallback((raw: any): PartyChecklist => {
     const arr = Array.isArray(raw) ? raw.slice() : raw ? [raw] : [];
@@ -162,9 +166,7 @@ export default function useParties(initialParty?: Partial<PartyInfo>) {
         return true;
       });
 
-    const uniq = Array.from(
-      new Map(mapped.map((m) => [JSON.stringify(m), m])).values()
-    );
+    const uniq = Array.from(new Map(mapped.map((m) => [JSON.stringify(m), m])).values());
     return uniq as PartyChecklist;
   }, []);
 
@@ -215,7 +217,7 @@ export default function useParties(initialParty?: Partial<PartyInfo>) {
       const name =
         (
           partyType === "JURIDICA"
-            ? companyName || rawName
+            ? rawName || companyName
             : rawName || `${firstName} ${lastName}`.trim()
         ) || "Sin nombre";
 
@@ -234,6 +236,7 @@ export default function useParties(initialParty?: Partial<PartyInfo>) {
         email: raw?.email ?? "",
         address: raw?.address ?? "",
         city: raw?.city ?? "",
+        state: raw?.state ?? raw?.estado ?? "",
         country: raw?.country ?? "",
         rif: raw?.rif ?? "",
         nit: partyType === "JURIDICA" ? raw?.nit ?? "" : undefined,
@@ -242,10 +245,78 @@ export default function useParties(initialParty?: Partial<PartyInfo>) {
         meta: raw?.meta ?? {},
         createdAt: raw?.createdAt,
         updatedAt: raw?.updatedAt,
+
+        activityEconomic:
+          raw?.activityEconomic ??
+          raw?.actividadEconomica ??
+          raw?.activity_economic ??
+          "",
+
+        condition:
+          raw?.condition ??
+          raw?.condicionRetencion ??
+          raw?.retentionNote ??
+          "",
+
+        retentionNote: raw?.retentionNote ?? raw?.retencion ?? "",
+
+        actividadEconomica:
+          raw?.actividadEconomica ??
+          raw?.activityEconomic ??
+          raw?.activity_economic ??
+          "",
+
+        condicionRetencion:
+          raw?.condicionRetencion ??
+          raw?.condition ??
+          raw?.retentionNote ??
+          "",
       } as PartyRecord;
     },
     [checklistAdd, normalizeChecklistRaw]
   );
+
+  const normalizeDraftFromParty = useCallback((p: PartyRecord) => {
+    const anyP = p as any;
+    return {
+      partyType: p.partyType ?? "NATURAL",
+      firstName: "",
+      lastName: "",
+      companyName: p.partyType === "JURIDICA" ? p.name ?? "" : "",
+      name: p.name ?? "",
+      phone: p.phone ?? "",
+      email: p.email ?? "",
+      address: p.address ?? "",
+      city: p.city ?? "",
+      state: anyP.state ?? anyP.estado ?? "",
+      country: p.country ?? "",
+      rif: p.rif ?? "",
+      nit: p.nit ?? "",
+      photoDataUrl: p.photoDataUrl ?? undefined,
+      companyId: p.companyId ?? "",
+      checklist: (p.checklist ?? []) as PartyChecklist,
+      isPropietario: false,
+      isProveedorContratista: false,
+      actividadEconomica:
+        anyP.actividadEconomica ??
+        anyP.activityEconomic ??
+        anyP.activityEconomic ??
+        "",
+      condicionRetencion:
+        anyP.condicionRetencion ??
+        anyP.condition ??
+        anyP.retentionNote ??
+        "",
+      retencion: anyP.retentionNote ?? anyP.retencion ?? "",
+      activityEconomic: anyP.activityEconomic ?? anyP.actividadEconomica ?? "",
+      condition: anyP.condition ?? anyP.condicionRetencion ?? "",
+      retentionNote: anyP.retentionNote ?? anyP.retencion ?? "",
+      rifMatchedLine: anyP.rifMatchedLine ?? "",
+      rawText: anyP.rawText ?? "",
+      needsManualReview: Boolean(anyP.needsManualReview),
+      documentType: anyP.documentType ?? "rif",
+    };
+  }, []);
 
   useEffect(() => {
     try {
@@ -458,8 +529,7 @@ export default function useParties(initialParty?: Partial<PartyInfo>) {
 
       if (cid) {
         const found = parties.find(
-          (p) =>
-            String(p.companyId) === String(cid) || String(p.id) === String(cid)
+          (p) => String(p.companyId) === String(cid) || String(p.id) === String(cid)
         );
         if (found) return found;
       }
@@ -501,7 +571,7 @@ export default function useParties(initialParty?: Partial<PartyInfo>) {
     let name = "";
 
     if (partyType === "JURIDICA") {
-      name = companyName || draftName;
+      name = draftName || companyName;
     } else {
       name = draftName || `${firstName} ${lastName}`.trim();
     }
@@ -530,6 +600,7 @@ export default function useParties(initialParty?: Partial<PartyInfo>) {
       email: draft.email ?? "",
       address: draft.address ?? "",
       city: draft.city ?? "",
+      state: draft.state ?? draft.estado ?? "",
       country: draft.country ?? "",
       rif: draft.rif ?? "",
       nit: partyType === "JURIDICA" ? draft.nit ?? "" : undefined,
@@ -537,6 +608,13 @@ export default function useParties(initialParty?: Partial<PartyInfo>) {
       companyId,
       checklist,
       meta: draft.meta ?? {},
+
+      activityEconomic: draft.activityEconomic ?? draft.actividadEconomica ?? "",
+      condition: draft.condition ?? draft.condicionRetencion ?? "",
+      retentionNote: draft.retentionNote ?? draft.retencion ?? "",
+
+      actividadEconomica: draft.actividadEconomica ?? draft.activityEconomic ?? "",
+      condicionRetencion: draft.condicionRetencion ?? draft.condition ?? "",
     } as PartyRecord;
 
     return rec;
@@ -553,11 +631,14 @@ export default function useParties(initialParty?: Partial<PartyInfo>) {
           email: "",
           address: "",
           city: "",
+          state: "",
           country: "",
           rif: "",
           nit: "",
           photoDataUrl: undefined,
+          companyId: undefined,
         });
+        setNewPartyDraft(emptyDraft);
         setPartyPhotoPreview(undefined);
         return;
       }
@@ -602,6 +683,7 @@ export default function useParties(initialParty?: Partial<PartyInfo>) {
         email: normalized.email,
         address: normalized.address,
         city: normalized.city,
+        state: (normalized as any).state ?? "",
         country: normalized.country,
         rif: normalized.rif,
         nit: normalized.nit ?? "",
@@ -610,9 +692,11 @@ export default function useParties(initialParty?: Partial<PartyInfo>) {
       });
       setPartyPhotoPreview(normalized.photoDataUrl);
 
+      setNewPartyDraft(normalizeDraftFromParty(normalized));
+
       return normalized;
     },
-    [parties, normalizePartyRecord]
+    [normalizeDraftFromParty, parties, normalizePartyRecord]
   );
 
   const upsertIntoParties = useCallback((newRec: PartyRecord, editingId?: string) => {
@@ -697,6 +781,7 @@ export default function useParties(initialParty?: Partial<PartyInfo>) {
             email: saved.email,
             address: saved.address,
             city: saved.city,
+            state: (saved as any).state ?? "",
             country: saved.country,
             rif: saved.rif,
             nit: saved.nit ?? "",
@@ -704,6 +789,7 @@ export default function useParties(initialParty?: Partial<PartyInfo>) {
             companyId: saved.companyId,
           });
           setPartyPhotoPreview(saved.photoDataUrl);
+          setNewPartyDraft(normalizeDraftFromParty(saved));
         }
 
         try {
@@ -736,6 +822,7 @@ export default function useParties(initialParty?: Partial<PartyInfo>) {
             email: rec.email,
             address: rec.address,
             city: rec.city,
+            state: (rec as any).state ?? "",
             country: rec.country,
             rif: rec.rif,
             nit: rec.nit ?? "",
@@ -743,6 +830,7 @@ export default function useParties(initialParty?: Partial<PartyInfo>) {
             companyId: rec.companyId,
           });
           setPartyPhotoPreview(rec.photoDataUrl);
+          setNewPartyDraft(normalizeDraftFromParty(rec));
         }
 
         try {
@@ -778,6 +866,7 @@ export default function useParties(initialParty?: Partial<PartyInfo>) {
           email: rec.email,
           address: rec.address,
           city: rec.city,
+          state: (rec as any).state ?? "",
           country: rec.country,
           rif: rec.rif,
           nit: rec.nit ?? "",
@@ -785,6 +874,7 @@ export default function useParties(initialParty?: Partial<PartyInfo>) {
           companyId: rec.companyId,
         });
         setPartyPhotoPreview(rec.photoDataUrl);
+        setNewPartyDraft(normalizeDraftFromParty(rec));
       }
 
       try {
@@ -865,12 +955,14 @@ export default function useParties(initialParty?: Partial<PartyInfo>) {
         email: "",
         address: "",
         city: "",
+        state: "",
         country: "",
         rif: "",
         nit: "",
         photoDataUrl: undefined,
       });
       setPartyPhotoPreview(undefined);
+      setNewPartyDraft(emptyDraft);
     }
   }
 
@@ -1046,24 +1138,7 @@ export default function useParties(initialParty?: Partial<PartyInfo>) {
     handleCancelPartyForm: () => {
       setShowNewPartyForm(false);
       setEditingPartyId(undefined);
-      setNewPartyDraft({
-        partyType: "NATURAL",
-        firstName: "",
-        lastName: "",
-        companyName: "",
-        phone: "",
-        email: "",
-        address: "",
-        city: "",
-        country: "",
-        rif: "",
-        nit: "",
-        photoDataUrl: undefined,
-        companyId: "",
-        checklist: [] as unknown as PartyChecklist,
-        isPropietario: false,
-        isProveedorContratista: false,
-      });
+      setNewPartyDraft(emptyDraft);
       setPartyPhotoPreview(undefined);
     },
     handleRemoveParty,

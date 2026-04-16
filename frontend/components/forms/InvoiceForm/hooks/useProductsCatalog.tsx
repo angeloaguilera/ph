@@ -40,6 +40,17 @@ const PROPERTY_KEYWORDS = [
   "lote",
 ];
 
+const CONDO_FLAGS = [
+  "isPropietario",
+  "isProveedorContratista",
+  "propietario",
+  "contratista",
+  "esPropietario",
+  "esContratista",
+  "hasPropietario",
+  "hasContratista",
+];
+
 type AnyRecord = Record<string, any>;
 
 function isPlainObject(value: any): value is AnyRecord {
@@ -144,12 +155,44 @@ function isPropertyRecord(record?: any) {
   }
 }
 
+function readFlag(source: any, key: string) {
+  const v = source?.[key] ?? source?.meta?.[key] ?? source?.checklist?.[key];
+
+  if (v === true || v === 1 || v === "1") return true;
+  if (v === false || v === 0 || v === "0") return false;
+
+  if (typeof v === "string") {
+    const s = v.toLowerCase().trim();
+    if (s === "true") return true;
+    if (s === "false") return false;
+  }
+
+  return undefined;
+}
+
+function hasExplicitFalseCondoFlag(record?: any) {
+  return CONDO_FLAGS.some((k) => readFlag(record, k) === false);
+}
+
+function hasExplicitTrueCondoFlag(record?: any) {
+  return CONDO_FLAGS.some((k) => readFlag(record, k) === true);
+}
+
 function decideApiParaRegistro(record?: any): string {
   try {
+    if (hasExplicitFalseCondoFlag(record)) {
+      return INVENTORY_API;
+    }
+
+    if (hasExplicitTrueCondoFlag(record)) {
+      return CONDO_ARTICLE_API.replace(/\/$/, "");
+    }
+
     if (isContractorOrOwner(record)) {
       return CONDO_ARTICLE_API.replace(/\/$/, "");
     }
   } catch {}
+
   return INVENTORY_API;
 }
 

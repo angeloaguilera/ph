@@ -33,7 +33,14 @@ type Props = {
   className?: string;
 };
 
+type JsonSafeResult = {
+  json: SeniatResponse | null;
+  text: string;
+  contentType: string;
+};
+
 const DEBUG_SENIAT = true;
+const AUX_API = "/api/administration/auxiliary";
 
 function cleanRifInputPreserveCase(value: string) {
   return String(value || "")
@@ -62,14 +69,10 @@ function buildSeniatUrl(rif: string, documentType: DocumentType) {
     params.set("tipo", "rif");
   }
 
-  return `/api/seniat2?${params.toString()}`;
+  return "/api/seniat2?" + params.toString();
 }
 
-async function readResponseAsJsonSafe(res: Response): Promise<{
-  json: SeniatResponse | null;
-  text: string;
-  contentType: string;
-}> {
+async function readResponseAsJsonSafe(res: Response): Promise<JsonSafeResult> {
   const contentType = res.headers.get("content-type") || "";
   const text = await res.text();
 
@@ -108,7 +111,65 @@ export default function SeniatRifConsult({
   const labelText = isNatural ? "Cédula para consultar SENIAT" : "RIF";
   const placeholderText = isNatural ? "Ej: 12345678" : "Ej: J123456789";
 
-  const applySeniatData = (data: SeniatResponse, rifFallback: string) => {
+  const persistDraftToApi = async (nextDraft: any) => {
+    try {
+      const rifValue = isNatural
+        ? cleanNaturalId(nextDraft?.rif ?? naturalDocument)
+        : cleanRifInputPreserveCase(nextDraft?.rif ?? draft?.rif ?? "");
+
+      const payload = {
+        ...nextDraft,
+        partyType: currentPartyType,
+        documentType,
+        rif: rifValue,
+        name:
+          nextDraft?.name ||
+          nextDraft?.companyName ||
+          `${nextDraft?.firstName ?? ""} ${nextDraft?.lastName ?? ""}`.trim() ||
+          "Sin nombre",
+        actividadEconomica:
+          nextDraft?.actividadEconomica ?? nextDraft?.activityEconomic ?? "",
+        condicionRetencion:
+          nextDraft?.condicionRetencion ??
+          nextDraft?.condition ??
+          nextDraft?.retentionNote ??
+          "",
+        retencion: nextDraft?.retencion ?? nextDraft?.retentionNote ?? "",
+        activityEconomic:
+          nextDraft?.activityEconomic ?? nextDraft?.actividadEconomica ?? "",
+        condition: nextDraft?.condition ?? nextDraft?.condicionRetencion ?? "",
+        retentionNote: nextDraft?.retentionNote ?? nextDraft?.retencion ?? "",
+      };
+
+      const resp = await fetch(AUX_API, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action: "upsert",
+          item: payload,
+        }),
+      });
+
+      const text = await resp.text();
+
+      if (DEBUG_SENIAT) {
+        console.log("[SENIAT] Guardado en API:", {
+          ok: resp.ok,
+          status: resp.status,
+          text,
+          payload,
+        });
+      }
+
+      if (!resp.ok) {
+        console.warn("[SENIAT] No se pudo guardar en la API:", text);
+      }
+    } catch (err) {
+      console.warn("[SENIAT] Error guardando en la API:", err);
+    }
+  };
+
+  const applySeniatData = async (data: SeniatResponse, rifFallback: string) => {
     const rifFinal = cleanRifInputPreserveCase(data.rif || rifFallback);
 
     if (DEBUG_SENIAT) {
@@ -117,41 +178,43 @@ export default function SeniatRifConsult({
       console.groupEnd();
     }
 
-    setNewPartyDraft((d: any) => {
-      const base = { ...(d ?? {}) };
-
-      base.partyType = currentPartyType;
-      base.documentType = documentType;
-
-      if (!isNatural) {
-        base.rif = rifFinal;
-      }
-
-      if (isNatural) {
-        if (data.firstName) base.firstName = data.firstName;
-        if (data.lastName) base.lastName = data.lastName;
-      } else {
-        if (data.companyName) {
-          base.companyName = data.companyName;
-          base.firstName = "";
-          base.lastName = "";
-        }
-        if (data.firstName) base.firstName = data.firstName;
-        if (data.lastName) base.lastName = data.lastName;
-      }
-
-      base.activityEconomic = data.activityEconomic || "";
-      base.condition = data.condition || "";
-      base.retentionNote = data.retentionNote || "";
-      base.rifMatchedLine = data.rifMatchedLine || "";
-      base.rawText = data.rawText || "";
-      base.needsManualReview = Boolean(data.needsManualReview);
-      base.checklist = Array.isArray(data.checklist)
+    const nextDraft = {
+      ...(draft ?? {}),
+      partyType: currentPartyType,
+      documentType,
+      rif: isNatural ? draft?.rif ?? rifFinal : rifFinal,
+      name:
+        currentPartyType === "JURIDICA"
+          ? data.companyName || draft?.companyName || draft?.name || ""
+          : `${data.firstName ?? draft?.firstName ?? ""} ${
+              data.lastName ?? draft?.lastName ?? ""
+            }`.trim(),
+      firstName:
+        data.firstName ?? draft?.firstName ?? "",
+      lastName:
+        data.lastName ?? draft?.lastName ?? "",
+      companyName:
+        currentPartyType === "JURIDICA"
+          ? data.companyName || draft?.companyName || ""
+          : draft?.companyName || "",
+      activityEconomic: data.activityEconomic || "",
+      condition: data.condition || "",
+      retentionNote: data.retentionNote || "",
+      actividadEconomica: data.activityEconomic || "",
+      condicionRetencion: data.condition || data.retentionNote || "",
+      retencion: data.retentionNote || "",
+      rifMatchedLine: data.rifMatchedLine || "",
+      rawText: data.rawText || "",
+      needsManualReview: Boolean(data.needsManualReview),
+      checklist: Array.isArray(data.checklist)
         ? data.checklist
-        : base.checklist || [];
+        : Array.isArray(draft?.checklist)
+        ? draft.checklist
+        : [],
+    };
 
-      return base;
-    });
+    setNewPartyDraft(() => nextDraft);
+    await persistDraftToApi(nextDraft);
   };
 
   const consultarSeniat = async (rifBase: string) => {
@@ -162,8 +225,9 @@ export default function SeniatRifConsult({
 
     if (!rif) {
       setSeniatMessage("Escribe un documento antes de consultar SENIAT.");
-      if (DEBUG_SENIAT)
+      if (DEBUG_SENIAT) {
         console.warn("[SENIAT] Consulta cancelada: documento vacío");
+      }
       return;
     }
 
@@ -190,9 +254,7 @@ export default function SeniatRifConsult({
         },
       });
 
-      const { json: data, text, contentType } = await readResponseAsJsonSafe(
-        res
-      );
+      const { json: data, text, contentType } = await readResponseAsJsonSafe(res);
       const responseData: SeniatResponse = data ?? {};
 
       if (seq !== requestSeq.current) return;
@@ -205,16 +267,21 @@ export default function SeniatRifConsult({
       }
 
       if (responseData.captchaDetected) {
-        setNewPartyDraft((d: any) => ({
-          ...(d ?? {}),
+        const nextDraft = {
+          ...(draft ?? {}),
           needsManualReview: true,
           partyType: currentPartyType,
           documentType,
-        }));
+        };
+
+        setNewPartyDraft(() => nextDraft);
+        await persistDraftToApi(nextDraft);
 
         setSeniatMessage("SENIAT mostró captcha. Revisión manual activada.");
 
-        if (DEBUG_SENIAT) console.warn("[SENIAT] Captcha detectado o bloqueo.");
+        if (DEBUG_SENIAT) {
+          console.warn("[SENIAT] Captcha detectado o bloqueo.");
+        }
         return;
       }
 
@@ -235,20 +302,48 @@ export default function SeniatRifConsult({
           });
         }
 
+        const nextDraft = {
+          ...(draft ?? {}),
+          needsManualReview: true,
+          partyType: currentPartyType,
+          documentType,
+        };
+
+        setNewPartyDraft(() => nextDraft);
+        await persistDraftToApi(nextDraft);
+
         throw new Error(fallbackMessage);
       }
 
-      applySeniatData(responseData, rif);
+      await applySeniatData(responseData, rif);
 
       if (responseData.found) {
         setSeniatMessage("Consulta SENIAT completada.");
         if (DEBUG_SENIAT) console.log("[SENIAT] Coincidencia encontrada.");
       } else {
+        const nextDraft = {
+          ...(draft ?? {}),
+          needsManualReview: true,
+          partyType: currentPartyType,
+          documentType,
+          activityEconomic: responseData.activityEconomic || "",
+          condition: responseData.condition || "",
+          retentionNote: responseData.retentionNote || "",
+          actividadEconomica: responseData.activityEconomic || "",
+          condicionRetencion:
+            responseData.condition || responseData.retentionNote || "",
+          retencion: responseData.retentionNote || "",
+        };
+
+        setNewPartyDraft(() => nextDraft);
+        await persistDraftToApi(nextDraft);
+
         setSeniatMessage(
           "No se encontró coincidencia automática. Revisión manual activada."
         );
-        if (DEBUG_SENIAT)
+        if (DEBUG_SENIAT) {
           console.warn("[SENIAT] No hubo coincidencia automática.");
+        }
       }
     } catch (error: any) {
       if (seq !== requestSeq.current) return;
@@ -260,13 +355,16 @@ export default function SeniatRifConsult({
           ? error
           : "Error consultando SENIAT";
 
-      setSeniatMessage(message);
-      setNewPartyDraft((d: any) => ({
-        ...(d ?? {}),
+      const nextDraft = {
+        ...(draft ?? {}),
         needsManualReview: true,
         partyType: currentPartyType,
         documentType,
-      }));
+      };
+
+      setSeniatMessage(message);
+      setNewPartyDraft(() => nextDraft);
+      await persistDraftToApi(nextDraft);
 
       if (DEBUG_SENIAT) {
         console.error("[SENIAT] Error final:", error);
@@ -322,6 +420,9 @@ export default function SeniatRifConsult({
               base.condition = "";
               base.retentionNote = "";
               base.rawText = "";
+              base.actividadEconomica = "";
+              base.condicionRetencion = "";
+              base.retencion = "";
               return base;
             });
           }}

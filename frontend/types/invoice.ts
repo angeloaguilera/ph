@@ -38,8 +38,8 @@ export type InvoiceItem = {
   id?: string;
   invoiceId?: string;
   kind?: ItemKind;
-  catalogId?: string | null; // id en catálogo si aplica
-  masterId?: string | null; // id maestro si procede
+  catalogId?: string | null;
+  masterId?: string | null;
   accountId?: string | null;
   category?: string | null;
   type?: string | null;
@@ -59,19 +59,17 @@ export type InvoiceItem = {
   total?: number;
   createdAt?: string;
   updatedAt?: string;
-  // campos útiles para inmuebles
   propertyId?: string | null;
 };
 
 /**
  * Checklist types
- * - ChecklistItem ahora admite metadatos y timestamps
  */
 export type ChecklistItem = {
   id?: string;
   label: string;
   done?: boolean;
-  meta?: Record<string, any>; // libre para notas/usuario/fecha extra
+  meta?: Record<string, any>;
   createdAt?: string;
   updatedAt?: string;
 };
@@ -88,11 +86,12 @@ export type PartyInfo = {
   email?: string;
   address?: string;
   city?: string;
+  state?: string;
   country?: string;
   rif?: string;
   nit?: string;
   photoDataUrl?: string;
-  companyId?: string; // id de la compañía asociada (importantísimo para catálogo)
+  companyId?: string;
   checklist?: PartyChecklist;
   meta?: Record<string, any>;
   createdAt?: string;
@@ -105,9 +104,7 @@ export type PartyInfo = {
 export type PartyRecord = PartyInfo & {
   id: string;
   role: PartyRole;
-  // checklist repetido por claridad tipada
   checklist?: PartyChecklist;
-  // metadatos globales del registro
   meta?: Record<string, any>;
   createdAt?: string;
   updatedAt?: string;
@@ -175,6 +172,5 @@ export type Invoice = {
   meta?: Record<string, any>;
   createdAt?: string;
   updatedAt?: string;
-  // campos opcionales extra que tu app pueda usar
   [key: string]: any;
 };

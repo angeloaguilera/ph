@@ -1,0 +1,35 @@
+[
+  {
+    "id": "1776373198569-scwcy60",
+    "name": "Alquielr",
+    "description": "",
+    "providerId": null,
+    "companyId": "de8faf09-7f42-4e5f-8072-8d0babae9328",
+    "category": null,
+    "income": true,
+    "rate": 199.98,
+    "defaultRate": 199.98,
+    "accountId": null,
+    "createdAt": "2026-04-16T20:59:58.494Z",
+    "updatedAt": "2026-04-16T20:59:58.569Z",
+    "meta": {
+      "transactionType": "venta",
+      "companyId": "de8faf09-7f42-4e5f-8072-8d0babae9328",
+      "domain": "general",
+      "isPropietario": false,
+      "isProveedorContratista": false,
+      "propietario": false,
+      "contratista": false,
+      "categoriaContable": "ingresos",
+      "categoria_contable": "ingresos",
+      "accountCategory": "ingresos",
+      "contableCategory": "ingresos",
+      "account": "ingresos",
+      "esPropietario": false,
+      "esContratista": false,
+      "hasPropietario": false,
+      "hasContratista": false
+    },
+    "domain": "general"
+  }
+]
