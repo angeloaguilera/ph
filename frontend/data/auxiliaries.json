@@ -6,14 +6,14 @@
     "name": "SPLENDOR MANTENIMIENTO,C.A.",
     "companyName": "Si el RIF es menor a nueve",
     "rif": "J000680930",
-    "nit": "023213",
+    "nit": "",
     "phone": "",
     "email": "",
     "address": "",
     "city": "",
     "state": "",
     "country": "",
-    "companyId": "de8faf09-7f42-4e5f-8072-8d0babae9328",
+    "companyId": "e4adddc7-c51d-4650-a494-766169330c41",
     "isPropietario": false,
     "isProveedorContratista": false,
     "needsManualReview": false,
@@ -29,9 +29,9 @@
     "condicionRetencion": "Contribuyente Ordinario del IVA y Agente de Retención del IVA",
     "retencion": "La condición de este contribuyente requiere la retención del 75% del impuesto causado, salvo que incurra en los supuestos establecidos para la retención del 100%.",
     "role": "CLIENTE",
-    "id": "0dec5764-1ef5-4083-8e0f-88aa53a79761",
+    "id": "df3d98c3-5fc1-43d2-9173-eb4e0d9f260e",
     "meta": {},
-    "createdAt": "2026-04-16T21:00:42.497Z",
-    "updatedAt": "2026-04-16T21:00:42.497Z"
+    "createdAt": "2026-04-22T22:03:37.841Z",
+    "updatedAt": "2026-04-22T22:03:37.841Z"
   }
 ]
