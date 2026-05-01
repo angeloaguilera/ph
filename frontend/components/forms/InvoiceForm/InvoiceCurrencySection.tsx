@@ -3,6 +3,7 @@
 import React, { useEffect } from "react";
 import type { CurrencyCode } from "./hooks/useExchangeRate";
 import { formatMoney } from "./invoiceMoney";
+import "./InvoiceCurrencySection.css";
 
 type ConversionInfo = {
   rate: number;
@@ -57,7 +58,6 @@ export default function InvoiceCurrencySection({
   baseAmount,
   facturaTotalFinal,
 }: Props) {
-  // Se desactiva automáticamente al cargar el componente
   useEffect(() => {
     setConversionEnabled(false);
   }, [setConversionEnabled]);
@@ -81,15 +81,21 @@ export default function InvoiceCurrencySection({
   };
 
   return (
-    <div className="border rounded p-3 space-y-3">
-      <div className="flex items-center justify-between gap-3">
-        <div className="text-sm font-medium">
+    <div className="invoice-currency">
+      <div className="invoice-currency__header">
+        <div className="invoice-currency__status">
           Conversión de moneda:{" "}
-          <span className={conversionEnabled ? "text-green-600" : "text-red-600"}>
+          <span
+            className={
+              conversionEnabled
+                ? "invoice-currency__status--on"
+                : "invoice-currency__status--off"
+            }
+          >
             {conversionEnabled ? "Activa" : "Desactivada"}
           </span>
           {sameCurrency && conversionEnabled && (
-            <span className="ml-2 text-xs text-gray-500">
+            <span className="invoice-currency__hint-inline">
               (Moneda origen y destino iguales)
             </span>
           )}
@@ -98,27 +104,27 @@ export default function InvoiceCurrencySection({
         <button
           type="button"
           onClick={toggleConversion}
-          className={`px-4 py-2 rounded text-sm font-medium border transition ${
+          className={`invoice-currency__toggle ${
             conversionEnabled
-              ? "bg-red-600 text-white border-red-600 hover:bg-red-700"
-              : "bg-green-600 text-white border-green-600 hover:bg-green-700"
+              ? "invoice-currency__toggle--off"
+              : "invoice-currency__toggle--on"
           }`}
         >
           {conversionEnabled
-            ? "Desactivar conversión de moneda"
-            : "Activar conversión de moneda"}
+            ? "Desactivar conversión"
+            : "Activar conversión"}
         </button>
       </div>
 
       {conversionEnabled && (
         <>
-          <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
-            <div>
-              <label className="block text-sm font-medium mb-1">
+          <div className="invoice-currency__fields">
+            <div className="invoice-currency__field">
+              <label className="invoice-currency__label">
                 Moneda del monto
               </label>
               <select
-                className="w-full border rounded px-3 py-2"
+                className="invoice-currency__select"
                 value={documentCurrency}
                 onChange={(e) => setDocumentCurrency(e.target.value as CurrencyCode)}
               >
@@ -127,12 +133,12 @@ export default function InvoiceCurrencySection({
               </select>
             </div>
 
-            <div>
-              <label className="block text-sm font-medium mb-1">
+            <div className="invoice-currency__field">
+              <label className="invoice-currency__label">
                 Moneda a convertir
               </label>
               <select
-                className="w-full border rounded px-3 py-2"
+                className="invoice-currency__select"
                 value={targetCurrency}
                 onChange={(e) => setTargetCurrency(e.target.value as CurrencyCode)}
               >
@@ -141,15 +147,13 @@ export default function InvoiceCurrencySection({
               </select>
             </div>
 
-            <div>
-              <label className="block text-sm font-medium mb-1">
-                Tasa de cambio
-              </label>
+            <div className="invoice-currency__field">
+              <label className="invoice-currency__label">Tasa de cambio</label>
               <input
                 type="number"
                 min="0"
                 step="any"
-                className="w-full border rounded px-3 py-2"
+                className="invoice-currency__input"
                 value={useAutoRate ? autoExchangeRate || "" : manualExchangeRate || ""}
                 onChange={(e) => {
                   setUseAutoRate(false);
@@ -160,16 +164,17 @@ export default function InvoiceCurrencySection({
               />
             </div>
 
-            <div className="flex flex-col justify-end gap-2">
-              <label className="flex items-center gap-2 text-sm">
+            <div className="invoice-currency__field invoice-currency__field--bottom">
+              <label className="invoice-currency__check">
                 <input
                   type="checkbox"
                   checked={useAutoRate}
                   onChange={(e) => setUseAutoRate(e.target.checked)}
                 />
-                Tasa automática
+                <span>Tasa automática</span>
               </label>
-              <div className="text-xs text-gray-500">
+
+              <div className="invoice-currency__meta">
                 {autoRateLoading
                   ? "Actualizando tasa..."
                   : autoRateError
@@ -181,20 +186,20 @@ export default function InvoiceCurrencySection({
             </div>
           </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
-            <div className="border rounded p-3">
-              <div className="text-xs text-gray-500 mb-1">Tipo de conversión</div>
-              <div className="font-medium">
+          <div className="invoice-currency__cards">
+            <div className="invoice-currency__card">
+              <div className="invoice-currency__card-label">Tipo de conversión</div>
+              <div className="invoice-currency__card-value">
                 {hasConversion ? conversionInfo.conversionType : "Sin conversión"}
               </div>
             </div>
 
-            <div className="border rounded p-3">
-              <div className="text-xs text-gray-500 mb-1">Monto</div>
-              <div className="font-medium">
+            <div className="invoice-currency__card">
+              <div className="invoice-currency__card-label">Monto</div>
+              <div className="invoice-currency__card-value">
                 {formatMoney(baseAmount, documentCurrency)}
               </div>
-              <div className="text-xs text-gray-500 mt-1">
+              <div className="invoice-currency__card-note">
                 {hasConversion ? (
                   <>Monto reflejado: {formatMoney(convertedAmount, targetCurrency)}</>
                 ) : (
@@ -203,12 +208,12 @@ export default function InvoiceCurrencySection({
               </div>
             </div>
 
-            <div className="border rounded p-3">
-              <div className="text-xs text-gray-500 mb-1">Total</div>
-              <div className="font-medium">
+            <div className="invoice-currency__card">
+              <div className="invoice-currency__card-label">Total</div>
+              <div className="invoice-currency__card-value">
                 {formatMoney(facturaTotalFinal, documentCurrency)}
               </div>
-              <div className="text-xs text-gray-500 mt-1">
+              <div className="invoice-currency__card-note">
                 {hasConversion ? (
                   <>Total reflejado: {formatMoney(convertedTotal, targetCurrency)}</>
                 ) : (
@@ -217,13 +222,15 @@ export default function InvoiceCurrencySection({
               </div>
             </div>
 
-            <div className="border rounded p-3">
-              <div className="text-xs text-gray-500 mb-1">Tasa aplicada</div>
-              <div className="font-medium">{hasConversion ? effectiveRate : 0}</div>
+            <div className="invoice-currency__card">
+              <div className="invoice-currency__card-label">Tasa aplicada</div>
+              <div className="invoice-currency__card-value">
+                {hasConversion ? effectiveRate : 0}
+              </div>
             </div>
           </div>
 
-          <div className="text-xs text-gray-500">
+          <div className="invoice-currency__help">
             Si activas la tasa automática, se actualiza sola. Si la apagas, puedes
             colocar la tasa manualmente.
           </div>

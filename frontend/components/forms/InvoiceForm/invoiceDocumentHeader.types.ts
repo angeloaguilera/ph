@@ -1,13 +1,22 @@
+import type React from "react";
+
 export type PreviewKind = "image" | "pdf" | "excel" | "none";
 
-export type SetValue<T> = (value: T) => void;
+// ✅ Cambiado: ahora SetValue soporta setState normal y setState con callback (prev => next)
+export type SetValue<T> = React.Dispatch<React.SetStateAction<T>>;
+
+// ✅ Tipos exactos para evitar strings sueltos
+export type Destination = "BANCO" | "CAJA";
+export type DocKind = "FACTURA" | "RECIBO" | "NOMINA";
+export type InvoiceType = "VENTA" | "COMPRA";
+export type PaymentType = "" | "DEBITO" | "TRANSFERENCIA" | "CREDITO" | "PAGOMOVIL";
 
 export type InvoiceDocumentHeaderSectionProps = {
-  docKind: string;
-  setDocKind: SetValue<string>;
+  docKind: DocKind;
+  setDocKind: SetValue<DocKind>;
 
-  invoiceType: string;
-  onInvoiceTypeChange: SetValue<string>;
+  invoiceType: InvoiceType;
+  onInvoiceTypeChange: SetValue<InvoiceType>;
 
   invoiceName: string;
   setInvoiceName: SetValue<string>;
@@ -24,8 +33,8 @@ export type InvoiceDocumentHeaderSectionProps = {
   numeroControl: string;
   setNumeroControl: SetValue<string>;
 
-  destination: string;
-  setDestination: SetValue<string>;
+  destination: Destination;
+  setDestination: SetValue<Destination>;
 
   bank: string;
   setBank: SetValue<string>;
@@ -33,8 +42,8 @@ export type InvoiceDocumentHeaderSectionProps = {
   caja: string;
   setCaja: SetValue<string>;
 
-  paymentType: string;
-  setPaymentType: SetValue<string>;
+  paymentType: PaymentType;
+  setPaymentType: SetValue<PaymentType>;
 
   referenceNumber: string;
   setReferenceNumber: SetValue<string>;

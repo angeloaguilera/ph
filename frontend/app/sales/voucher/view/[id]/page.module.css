@@ -1,0 +1,398 @@
+.page {
+  min-height: 100vh;
+  background: #0b1220;
+  padding: 28px 14px;
+  color: #e8eefc;
+}
+
+.container {
+  max-width: 1100px;
+  margin: 0 auto;
+}
+
+.shell {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.card {
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.10);
+  border-radius: 14px;
+  padding: 16px;
+  backdrop-filter: blur(10px);
+}
+
+.title {
+  font-size: 22px;
+  margin: 0 0 8px;
+}
+
+.text {
+  margin: 0 0 12px;
+  opacity: 0.9;
+}
+
+/* Topbar */
+.topbar {
+  display: flex;
+  gap: 12px;
+  align-items: flex-start;
+  justify-content: space-between;
+  padding: 14px;
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.10);
+}
+
+.topbarLeft {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.topTitle {
+  margin: 0;
+  font-size: 18px;
+  font-weight: 700;
+}
+
+.topSubtitle {
+  margin: 0;
+  opacity: 0.85;
+  font-size: 13px;
+}
+
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  justify-content: flex-end;
+}
+
+.button,
+.primary {
+  appearance: none;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  background: rgba(255, 255, 255, 0.08);
+  color: #e8eefc;
+  padding: 10px 12px;
+  border-radius: 12px;
+  cursor: pointer;
+  font-weight: 600;
+  font-size: 13px;
+}
+
+.button:hover {
+  background: rgba(255, 255, 255, 0.12);
+}
+
+.primary {
+  background: rgba(120, 170, 255, 0.18);
+  border-color: rgba(120, 170, 255, 0.35);
+}
+
+.primary:hover {
+  background: rgba(120, 170, 255, 0.24);
+}
+
+/* Paper area */
+.paperWrap {
+  display: flex;
+  justify-content: center;
+}
+
+.paper {
+  width: 820px;
+  max-width: 100%;
+  background: #ffffff;
+  color: #101828;
+  border-radius: 14px;
+  box-shadow: 0 22px 60px rgba(0, 0, 0, 0.45);
+  padding: 22px;
+}
+
+/* Header inside paper */
+.paperHeader {
+  display: flex;
+  justify-content: space-between;
+  gap: 18px;
+  border-bottom: 1px solid #e6eaf2;
+  padding-bottom: 14px;
+}
+
+.brandBlock {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+}
+
+.logoBox {
+  width: 44px;
+  height: 44px;
+  border-radius: 12px;
+  background: #101828;
+  display: grid;
+  place-items: center;
+}
+
+.logoMark {
+  width: 18px;
+  height: 18px;
+  border-radius: 6px;
+  background: #ffffff;
+}
+
+.brandName {
+  font-weight: 800;
+  font-size: 16px;
+  letter-spacing: 0.2px;
+}
+
+.brandMeta {
+  font-size: 12px;
+  color: #475467;
+  margin-top: 2px;
+}
+
+.docBlock {
+  min-width: 270px;
+  text-align: right;
+}
+
+.docTitle {
+  font-weight: 900;
+  letter-spacing: 0.8px;
+  font-size: 18px;
+  margin-bottom: 8px;
+}
+
+.docRow {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  font-size: 12px;
+  margin: 2px 0;
+}
+
+.docLabel {
+  color: #667085;
+}
+
+.docValue {
+  color: #101828;
+  font-weight: 700;
+}
+
+/* Invoice name */
+.invoiceName {
+  margin-top: 12px;
+  font-size: 14px;
+  font-weight: 800;
+  color: #101828;
+  background: #f2f4f7;
+  border: 1px solid #e6eaf2;
+  padding: 10px 12px;
+  border-radius: 12px;
+}
+
+/* Blocks */
+.blocks {
+  margin-top: 14px;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+}
+
+.block {
+  border: 1px solid #e6eaf2;
+  border-radius: 12px;
+  padding: 12px;
+}
+
+.blockTitle {
+  font-weight: 900;
+  font-size: 13px;
+  margin-bottom: 8px;
+}
+
+.blockLine {
+  display: grid;
+  grid-template-columns: 100px 1fr;
+  gap: 10px;
+  font-size: 12px;
+  padding: 3px 0;
+}
+
+.k {
+  color: #667085;
+}
+
+.v {
+  color: #101828;
+  font-weight: 600;
+  word-break: break-word;
+}
+
+/* Table */
+.table {
+  margin-top: 14px;
+  border: 1px solid #e6eaf2;
+  border-radius: 12px;
+  overflow: hidden;
+}
+
+.thead {
+  display: grid;
+  grid-template-columns: 1fr 90px 140px 140px;
+  background: #101828;
+  color: #ffffff;
+  padding: 10px 12px;
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.thCenter {
+  text-align: center;
+}
+
+.thRight {
+  text-align: right;
+}
+
+.trow {
+  display: grid;
+  grid-template-columns: 1fr 90px 140px 140px;
+  padding: 10px 12px;
+  border-top: 1px solid #eef2f7;
+  align-items: center;
+}
+
+.td {
+  font-size: 12px;
+}
+
+.tdCenter {
+  text-align: center;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.tdRight {
+  text-align: right;
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.itemName {
+  font-weight: 800;
+  color: #101828;
+}
+
+.itemMeta {
+  margin-top: 2px;
+  font-size: 11px;
+  color: #667085;
+}
+
+/* Totals */
+.totals {
+  margin-top: 14px;
+  display: flex;
+  justify-content: flex-end;
+}
+
+.totalsBox {
+  width: 360px;
+  max-width: 100%;
+  border: 1px solid #e6eaf2;
+  border-radius: 12px;
+  padding: 12px;
+  background: #fbfcfe;
+}
+
+.totalRow,
+.totalRowBig {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 6px 0;
+}
+
+.totalLabel {
+  color: #667085;
+  font-weight: 700;
+  font-size: 12px;
+}
+
+.totalValue {
+  font-weight: 900;
+  font-size: 12px;
+  color: #101828;
+}
+
+.totalDivider {
+  height: 1px;
+  background: #e6eaf2;
+  margin: 8px 0;
+}
+
+.totalLabelBig {
+  font-weight: 900;
+  font-size: 14px;
+  letter-spacing: 0.3px;
+}
+
+.totalValueBig {
+  font-weight: 1000;
+  font-size: 16px;
+}
+
+/* Footer */
+.footer {
+  margin-top: 14px;
+  padding-top: 12px;
+  border-top: 1px dashed #d0d5dd;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.footerNote {
+  font-size: 12px;
+  color: #344054;
+  font-weight: 700;
+}
+
+.footerFine {
+  font-size: 11px;
+  color: #667085;
+}
+
+.hint {
+  font-size: 12px;
+  opacity: 0.85;
+}
+
+/* Responsive */
+@media (max-width: 860px) {
+  .paperHeader {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+  .docBlock {
+    text-align: left;
+    min-width: unset;
+  }
+  .docRow {
+    justify-content: flex-start;
+  }
+  .blocks {
+    grid-template-columns: 1fr;
+  }
+  .thead,
+  .trow {
+    grid-template-columns: 1fr 70px 110px 110px;
+  }
+}

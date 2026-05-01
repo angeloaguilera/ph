@@ -23,8 +23,19 @@ import {
   readImageWithOcr,
   readPdfFile,
 } from "./invoiceDocumentHeader.readers";
-import { InvoiceDocumentHeaderSectionProps, PreviewKind } from "./invoiceDocumentHeader.types";
-import { SUPPORTED_EXCEL_EXTS, SUPPORTED_IMAGE_EXTS } from "./invoiceDocumentHeader.constants";
+import {
+  InvoiceDocumentHeaderSectionProps,
+  PreviewKind,
+} from "./invoiceDocumentHeader.types";
+import {
+  SUPPORTED_EXCEL_EXTS,
+  SUPPORTED_IMAGE_EXTS,
+} from "./invoiceDocumentHeader.constants";
+
+type DocKind = InvoiceDocumentHeaderSectionProps["docKind"];
+type InvoiceType = InvoiceDocumentHeaderSectionProps["invoiceType"];
+type Destination = InvoiceDocumentHeaderSectionProps["destination"];
+type PaymentType = InvoiceDocumentHeaderSectionProps["paymentType"];
 
 export default function InvoiceDocumentHeaderSection({
   docKind,
@@ -62,11 +73,9 @@ export default function InvoiceDocumentHeaderSection({
   const [fileName, setFileName] = useState<string>("");
   const [excelRows, setExcelRows] = useState<string[][]>([]);
   const [localVoucherUrl, setLocalVoucherUrl] = useState<string>("");
-  const [isInvoiceCanceled, setIsInvoiceCanceled] = useState(false);
   const [hasUserSelectedDate, setHasUserSelectedDate] = useState(false);
 
   const effectiveVoucherUrl = voucherUrl ?? localVoucherUrl;
-  const invoiceStatusValue = isInvoiceCanceled ? "ANULADA" : "NO_ANULADA";
 
   useEffect(() => {
     return () => {
@@ -85,8 +94,6 @@ export default function InvoiceDocumentHeaderSection({
   };
 
   const uploadVoucher = async (file: File) => {
-    if (isInvoiceCanceled) return "";
-
     setIsUploadingVoucher(true);
     try {
       const formData = new FormData();
@@ -113,21 +120,19 @@ export default function InvoiceDocumentHeaderSection({
   };
 
   const applyDetectedValues = (rawText: string, sourceFileName?: string) => {
-    if (isInvoiceCanceled) return;
-
     const text = extractUsefulTextFromLines(rawText);
 
     const detectedDocKind = detectDocKind(text);
-    if (detectedDocKind) setDocKind(detectedDocKind);
+    if (detectedDocKind) setDocKind(detectedDocKind as DocKind);
 
     const detectedInvoiceType = detectInvoiceType(text);
-    if (detectedInvoiceType) onInvoiceTypeChange(detectedInvoiceType);
+    if (detectedInvoiceType) onInvoiceTypeChange(detectedInvoiceType as InvoiceType);
 
     const detectedDestination = detectDestination(text);
-    if (detectedDestination) setDestination(detectedDestination);
+    if (detectedDestination) setDestination(detectedDestination as Destination);
 
     const detectedPaymentType = detectPaymentType(text);
-    if (detectedPaymentType) setPaymentType(detectedPaymentType);
+    if (detectedPaymentType) setPaymentType(detectedPaymentType as PaymentType);
 
     const detectedDateTime = detectDocumentDate(text);
     if (detectedDateTime && !hasUserSelectedDate && !documentDateTime) {
@@ -180,8 +185,6 @@ export default function InvoiceDocumentHeaderSection({
   };
 
   const handleFile = async (file: File) => {
-    if (isInvoiceCanceled) return;
-
     setIsReading(true);
     setProgress(0);
     setExcelRows([]);
@@ -233,16 +236,8 @@ export default function InvoiceDocumentHeaderSection({
                 type="file"
                 accept=".png,.jpg,.jpeg,.webp,.bmp,.tif,.tiff,.pdf,.xls,.xlsx"
                 multiple={false}
-                disabled={isInvoiceCanceled}
-                className={`block w-full max-w-full rounded-md border px-3 py-2 text-sm file:mr-4 file:rounded-md file:border-0 file:bg-gray-100 file:px-4 file:py-2 file:text-sm file:font-medium ${
-                  isInvoiceCanceled ? "cursor-not-allowed bg-gray-100 opacity-70" : ""
-                }`}
+                className="block w-full max-w-full rounded-md border px-3 py-2 text-sm file:mr-4 file:rounded-md file:border-0 file:bg-gray-100 file:px-4 file:py-2 file:text-sm file:font-medium"
                 onChange={async (e) => {
-                  if (isInvoiceCanceled) {
-                    e.target.value = "";
-                    return;
-                  }
-
                   const file = e.target.files?.[0];
                   if (!file) return;
 
@@ -311,9 +306,8 @@ export default function InvoiceDocumentHeaderSection({
             <Field label="Comprobante">
               <select
                 value={docKind}
-                onChange={(e) => setDocKind(e.target.value)}
-                disabled={isInvoiceCanceled}
-                className={selectClass(isInvoiceCanceled)}
+                onChange={(e) => setDocKind(e.target.value as DocKind)}
+                className={selectClass(false)}
               >
                 <option value="FACTURA">Factura</option>
                 <option value="RECIBO">Recibo</option>
@@ -325,9 +319,8 @@ export default function InvoiceDocumentHeaderSection({
               <Field label="Tipo">
                 <select
                   value={invoiceType}
-                  onChange={(e) => onInvoiceTypeChange(e.target.value)}
-                  disabled={isInvoiceCanceled}
-                  className={selectClass(isInvoiceCanceled)}
+                  onChange={(e) => onInvoiceTypeChange(e.target.value as InvoiceType)}
+                  className={selectClass(false)}
                 >
                   <option value="VENTA">Venta</option>
                   <option value="COMPRA">Compra</option>
@@ -346,10 +339,9 @@ export default function InvoiceDocumentHeaderSection({
               className="md:col-span-2 xl:col-span-3"
             >
               <input
-                className={inputClass(isInvoiceCanceled)}
+                className={inputClass(false)}
                 value={invoiceName}
                 onChange={(e) => setInvoiceName(e.target.value)}
-                disabled={isInvoiceCanceled}
                 placeholder={docKind === "FACTURA" ? "Ej. Factura 26-12-2025" : "Ej. Recibo 26-12-2025"}
               />
             </Field>
@@ -358,10 +350,9 @@ export default function InvoiceDocumentHeaderSection({
               <input
                 type="datetime-local"
                 step={1}
-                className={inputClass(isInvoiceCanceled)}
+                className={inputClass(false)}
                 value={documentDateTime}
                 onChange={(e) => handleDateChange(e.target.value)}
-                disabled={isInvoiceCanceled}
                 name="documentDateTime"
               />
             </Field>
@@ -377,10 +368,9 @@ export default function InvoiceDocumentHeaderSection({
             <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
               <Field label="Número de recibo" className="md:col-span-2">
                 <input
-                  className={inputClass(isInvoiceCanceled)}
+                  className={inputClass(false)}
                   value={numeroRecibo}
                   onChange={(e) => setNumeroRecibo(e.target.value)}
-                  disabled={isInvoiceCanceled}
                   placeholder="Ej. R-00001234"
                 />
               </Field>
@@ -395,45 +385,24 @@ export default function InvoiceDocumentHeaderSection({
             <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
               <Field label="Número de la factura">
                 <input
-                  className={inputClass(isInvoiceCanceled)}
+                  className={inputClass(false)}
                   value={numeroFactura}
                   onChange={(e) => setNumeroFactura(e.target.value)}
-                  disabled={isInvoiceCanceled}
                   placeholder="Ej. 00-006400"
                 />
               </Field>
 
               <Field label="Número de control">
                 <input
-                  className={inputClass(isInvoiceCanceled)}
+                  className={inputClass(false)}
                   value={numeroControl}
                   onChange={(e) => setNumeroControl(e.target.value)}
-                  disabled={isInvoiceCanceled}
                   placeholder="Ej. 00-006300"
                 />
               </Field>
-
-              <Field label="Estado de la factura" className="md:col-span-2 xl:col-span-3">
-                <select
-                  value={invoiceStatusValue}
-                  onChange={(e) => setIsInvoiceCanceled(e.target.value === "ANULADA")}
-                  className={selectClass(false)}
-                >
-                  <option value="NO_ANULADA">No anulada</option>
-                  <option value="ANULADA">Factura anulada</option>
-                </select>
-              </Field>
-
-              {isInvoiceCanceled && (
-                <div className="md:col-span-2 xl:col-span-3 rounded-md border border-red-300 bg-red-50 px-3 py-2 text-sm text-red-700">
-                  Factura anulada activada. Todo el formulario queda deshabilitado.
-                </div>
-              )}
             </div>
           </div>
         )}
-
-        <input type="hidden" name="invoiceStatus" value={invoiceStatusValue} />
 
         {docKind !== "NOMINA" && (
           <div className="section-card">
@@ -442,10 +411,9 @@ export default function InvoiceDocumentHeaderSection({
             <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
               <Field label="Destino">
                 <select
-                  className={selectClass(isInvoiceCanceled)}
+                  className={selectClass(false)}
                   value={destination}
-                  onChange={(e) => setDestination(e.target.value)}
-                  disabled={isInvoiceCanceled}
+                  onChange={(e) => setDestination(e.target.value as Destination)}
                 >
                   <option value="BANCO">Banco</option>
                   <option value="CAJA">Caja</option>
@@ -456,19 +424,17 @@ export default function InvoiceDocumentHeaderSection({
                 <>
                   <Field label="Banco">
                     <input
-                      className={inputClass(isInvoiceCanceled)}
+                      className={inputClass(false)}
                       value={bank}
                       onChange={(e) => setBank(e.target.value)}
-                      disabled={isInvoiceCanceled}
                     />
                   </Field>
 
                   <Field label="Tipo de pago">
                     <select
-                      className={selectClass(isInvoiceCanceled)}
+                      className={selectClass(false)}
                       value={paymentType}
-                      onChange={(e) => setPaymentType(e.target.value)}
-                      disabled={isInvoiceCanceled}
+                      onChange={(e) => setPaymentType(e.target.value as PaymentType)}
                     >
                       <option value="">-- Selecciona --</option>
                       <option value="DEBITO">Débito</option>
@@ -480,10 +446,9 @@ export default function InvoiceDocumentHeaderSection({
 
                   <Field label="Número de referencia" className="md:col-span-2 xl:col-span-3">
                     <input
-                      className={inputClass(isInvoiceCanceled)}
+                      className={inputClass(false)}
                       value={referenceNumber}
                       onChange={(e) => setReferenceNumber(e.target.value)}
-                      disabled={isInvoiceCanceled}
                       placeholder="Ej. 1234567890"
                     />
                   </Field>
@@ -493,10 +458,9 @@ export default function InvoiceDocumentHeaderSection({
               {destination === "CAJA" && (
                 <Field label="Caja" className="md:col-span-2 xl:col-span-2">
                   <input
-                    className={inputClass(isInvoiceCanceled)}
+                    className={inputClass(false)}
                     value={caja}
                     onChange={(e) => setCaja(e.target.value)}
-                    disabled={isInvoiceCanceled}
                   />
                 </Field>
               )}

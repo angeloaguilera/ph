@@ -3,6 +3,7 @@
 import React, { useEffect, useMemo, useRef } from "react";
 import type { PartyRecord } from "../../../types/invoice";
 import SeniatRifConsult from "./SeniatRifConsult";
+import "./PartyFormInline.css";
 
 type PartyType = "NATURAL" | "JURIDICA";
 
@@ -430,15 +431,15 @@ export default function PartyFormInline({
     safeDraft.checklist.some((it: any) => String(it.label).toLowerCase() === "contratista");
 
   return (
-    <div>
-      <div className="mb-2">
-        <label className="block text-sm font-medium mb-1">
+    <div className="pf-wrap">
+      <div className="pf-card pf-card-top">
+        <div className="pf-section-title">
           Seleccionar {currentRole === "CLIENTE" ? "cliente" : "proveedor"}
-        </label>
+        </div>
 
-        <div className="flex gap-2">
+        <div className="pf-inline-actions">
           <select
-            className="flex-1 border rounded px-2 py-1"
+            className="pf-select pf-grow"
             value={selectedPartyId}
             onChange={(e) => onSelectParty(e.target.value)}
           >
@@ -450,20 +451,20 @@ export default function PartyFormInline({
             ))}
           </select>
 
-          <button type="button" onClick={handleOpenNew} className="px-3 py-1 bg-gray-200 rounded">
+          <button type="button" onClick={handleOpenNew} className="pf-btn pf-btn-secondary">
             + Nuevo
           </button>
 
           {selectedPartyId && (
             <>
-              <button type="button" onClick={onEditSelected} className="px-3 py-1 bg-yellow-100 rounded">
+              <button type="button" onClick={onEditSelected} className="pf-btn pf-btn-warning">
                 Editar
               </button>
 
               <button
                 type="button"
                 onClick={() => onRemoveParty(selectedPartyId)}
-                className="px-3 py-1 bg-red-600 text-white rounded"
+                className="pf-btn pf-btn-danger"
                 title="Eliminar cliente/proveedor seleccionado"
               >
                 Eliminar
@@ -474,12 +475,12 @@ export default function PartyFormInline({
       </div>
 
       {showNewPartyForm && (
-        <div className="border rounded p-3 bg-gray-50 mt-3">
-          <div className="grid grid-cols-3 gap-3">
+        <div className="pf-card pf-form">
+          <div className="pf-grid">
             <div>
-              <label className="block text-xs font-medium">Tipo de persona</label>
+              <label className="pf-label">Tipo de persona</label>
               <select
-                className="w-full border rounded px-2 py-1"
+                className="pf-select"
                 value={partyType}
                 onChange={(e) => {
                   const nextType = e.target.value as PartyType;
@@ -508,10 +509,10 @@ export default function PartyFormInline({
             </div>
 
             {partyType === "JURIDICA" ? (
-              <div className="col-span-2">
-                <label className="block text-xs font-medium">Nombre de la Empresa</label>
+              <div className="pf-col-2">
+                <label className="pf-label">Nombre de la Empresa</label>
                 <input
-                  className="w-full border rounded px-2 py-1"
+                  className="pf-input"
                   value={safeDraft.name || safeDraft.companyName}
                   onChange={(e) =>
                     setNewPartyDraft((d: any) => ({
@@ -525,18 +526,18 @@ export default function PartyFormInline({
             ) : (
               <>
                 <div>
-                  <label className="block text-xs font-medium">Nombre</label>
+                  <label className="pf-label">Nombre</label>
                   <input
-                    className="w-full border rounded px-2 py-1"
+                    className="pf-input"
                     value={safeDraft.firstName}
                     onChange={(e) => setNewPartyDraft((d: any) => ({ ...(d ?? {}), firstName: e.target.value }))}
                   />
                 </div>
 
                 <div>
-                  <label className="block text-xs font-medium">Apellido</label>
+                  <label className="pf-label">Apellido</label>
                   <input
-                    className="w-full border rounded px-2 py-1"
+                    className="pf-input"
                     value={safeDraft.lastName}
                     onChange={(e) => setNewPartyDraft((d: any) => ({ ...(d ?? {}), lastName: e.target.value }))}
                   />
@@ -544,15 +545,15 @@ export default function PartyFormInline({
               </>
             )}
 
-            <div className="col-span-3">
+            <div className="pf-col-3">
               <SeniatRifConsult draft={safeDraft} setNewPartyDraft={setNewPartyDraft} />
             </div>
 
             {partyType === "NATURAL" && (
-              <div className="col-span-3">
-                <label className="block text-xs font-medium">RIF</label>
+              <div className="pf-col-3">
+                <label className="pf-label">RIF</label>
                 <input
-                  className="w-full border rounded px-2 py-1"
+                  className="pf-input"
                   value={safeDraft.rif || ""}
                   onChange={(e) => {
                     const value = String(e.target.value ?? "")
@@ -572,9 +573,9 @@ export default function PartyFormInline({
 
             {partyType === "JURIDICA" && (
               <div>
-                <label className="block text-xs font-medium">NIT</label>
+                <label className="pf-label">NIT</label>
                 <input
-                  className="w-full border rounded px-2 py-1"
+                  className="pf-input"
                   value={safeDraft.nit || ""}
                   onChange={(e) => {
                     const value = String(e.target.value ?? "")
@@ -593,54 +594,54 @@ export default function PartyFormInline({
             )}
 
             <div>
-              <label className="block text-xs font-medium">Teléfono</label>
+              <label className="pf-label">Teléfono</label>
               <input
-                className="w-full border rounded px-2 py-1"
+                className="pf-input"
                 value={safeDraft.phone}
                 onChange={(e) => setNewPartyDraft((d: any) => ({ ...(d ?? {}), phone: e.target.value }))}
               />
             </div>
 
             <div>
-              <label className="block text-xs font-medium">Correo</label>
+              <label className="pf-label">Correo</label>
               <input
-                className="w-full border rounded px-2 py-1"
+                className="pf-input"
                 value={safeDraft.email}
                 onChange={(e) => setNewPartyDraft((d: any) => ({ ...(d ?? {}), email: e.target.value }))}
               />
             </div>
 
-            <div className="col-span-3">
-              <label className="block text-xs font-medium">Dirección</label>
+            <div className="pf-col-3">
+              <label className="pf-label">Dirección</label>
               <input
-                className="w-full border rounded px-2 py-1"
+                className="pf-input"
                 value={safeDraft.address}
                 onChange={(e) => setNewPartyDraft((d: any) => ({ ...(d ?? {}), address: e.target.value }))}
               />
             </div>
 
             <div>
-              <label className="block text-xs font-medium">Ciudad</label>
+              <label className="pf-label">Ciudad</label>
               <input
-                className="w-full border rounded px-2 py-1"
+                className="pf-input"
                 value={safeDraft.city}
                 onChange={(e) => setNewPartyDraft((d: any) => ({ ...(d ?? {}), city: e.target.value }))}
               />
             </div>
 
             <div>
-              <label className="block text-xs font-medium">Estado</label>
+              <label className="pf-label">Estado</label>
               <input
-                className="w-full border rounded px-2 py-1"
+                className="pf-input"
                 value={safeDraft.state}
                 onChange={(e) => setNewPartyDraft((d: any) => ({ ...(d ?? {}), state: e.target.value }))}
               />
             </div>
 
             <div>
-              <label className="block text-xs font-medium">País</label>
+              <label className="pf-label">País</label>
               <input
-                className="w-full border rounded px-2 py-1"
+                className="pf-input"
                 value={safeDraft.country}
                 onChange={(e) => setNewPartyDraft((d: any) => ({ ...(d ?? {}), country: e.target.value }))}
               />
@@ -649,9 +650,9 @@ export default function PartyFormInline({
             {partyType === "JURIDICA" && (
               <>
                 <div>
-                  <label className="block text-xs font-medium">Actividad económica</label>
+                  <label className="pf-label">Actividad económica</label>
                   <input
-                    className="w-full border rounded px-2 py-1"
+                    className="pf-input"
                     value={safeDraft.activityEconomic || ""}
                     onChange={(e) =>
                       setNewPartyDraft((d: any) => ({
@@ -664,9 +665,9 @@ export default function PartyFormInline({
                 </div>
 
                 <div>
-                  <label className="block text-xs font-medium">Condición</label>
+                  <label className="pf-label">Condición</label>
                   <input
-                    className="w-full border rounded px-2 py-1"
+                    className="pf-input"
                     value={safeDraft.condition || ""}
                     onChange={(e) =>
                       setNewPartyDraft((d: any) => ({
@@ -678,10 +679,10 @@ export default function PartyFormInline({
                   />
                 </div>
 
-                <div className="col-span-3">
-                  <label className="block text-xs font-medium">Retención</label>
+                <div className="pf-col-3">
+                  <label className="pf-label">Retención</label>
                   <input
-                    className="w-full border rounded px-2 py-1"
+                    className="pf-input"
                     value={safeDraft.retentionNote || ""}
                     onChange={(e) =>
                       setNewPartyDraft((d: any) => ({
@@ -697,49 +698,49 @@ export default function PartyFormInline({
 
             <input type="hidden" name="companyId" value={safeDraft.companyId} />
 
-            <div className="col-span-3">
-              {showPropietarioCheckbox && (
-                <label className="inline-flex items-center gap-2 mr-4">
-                  <input
-                    type="checkbox"
-                    checked={Boolean(safeDraft.isPropietario)}
-                    onChange={(e) => setPropietario(e.target.checked)}
-                  />
-                  <span className="text-xs">
-                    Propietario — si está activado, todo lo que se cree irá a: servicios, productos, inmuebles
-                  </span>
-                </label>
-              )}
+            <div className="pf-col-3">
+              <div className="pf-checklist">
+                {showPropietarioCheckbox && (
+                  <label className="pf-checkbox">
+                    <input
+                      type="checkbox"
+                      checked={Boolean(safeDraft.isPropietario)}
+                      onChange={(e) => setPropietario(e.target.checked)}
+                    />
+                    <span>
+                      Propietario — si está activado, todo lo que se cree irá a: servicios, productos, inmuebles
+                    </span>
+                  </label>
+                )}
 
-              {showProveedorCheckbox && (
-                <label className="inline-flex items-center gap-2 mr-4">
-                  <input
-                    type="checkbox"
-                    checked={Boolean(safeDraft.isProveedorContratista)}
-                    onChange={(e) => setProveedorContratista(e.target.checked)}
-                  />
-                  <span className="text-xs">
-                    Contratista — si está activado, todo lo que se cree irá a: servicios, productos, inmuebles
-                  </span>
-                </label>
-              )}
+                {showProveedorCheckbox && (
+                  <label className="pf-checkbox">
+                    <input
+                      type="checkbox"
+                      checked={Boolean(safeDraft.isProveedorContratista)}
+                      onChange={(e) => setProveedorContratista(e.target.checked)}
+                    />
+                    <span>
+                      Contratista — si está activado, todo lo que se cree irá a: servicios, productos, inmuebles
+                    </span>
+                  </label>
+                )}
+              </div>
 
-              <div className="mt-2 text-xs text-gray-700">
+              <div className="pf-summary">
                 {safeDraft.activityEconomic ? <div>Actividad económica: {safeDraft.activityEconomic}</div> : null}
                 {safeDraft.condition ? <div>Condición: {safeDraft.condition}</div> : null}
                 {safeDraft.retentionNote ? <div>Retención: {safeDraft.retentionNote}</div> : null}
               </div>
 
               {safeDraft.rawText ? (
-                <div className="mt-2">
-                  <div className="text-xs font-medium text-gray-700 mb-1">Texto completo detectado</div>
-                  <pre className="max-h-40 overflow-auto rounded bg-black p-2 text-[11px] text-green-400 whitespace-pre-wrap">
-                    {safeDraft.rawText}
-                  </pre>
+                <div className="pf-raw-block">
+                  <div className="pf-raw-title">Texto completo detectado</div>
+                  <pre className="pf-raw-text">{safeDraft.rawText}</pre>
                 </div>
               ) : null}
 
-              <div className="mt-2 text-xs text-gray-600">
+              <div className="pf-checkline">
                 {safeDraft.rifMatchedLine ? (
                   <>Coincidencia: {safeDraft.rifMatchedLine}</>
                 ) : safeDraft.checklist && safeDraft.checklist.length > 0 ? (
@@ -756,15 +757,15 @@ export default function PartyFormInline({
             </div>
 
             <div>
-              <label className="block text-xs font-medium">Foto</label>
-              <input type="file" accept="image/*" onChange={(e) => onPhotoChange(e.target.files)} />
+              <label className="pf-label">Foto</label>
+              <input className="pf-file" type="file" accept="image/*" onChange={(e) => onPhotoChange(e.target.files)} />
             </div>
 
-            <div className="col-span-1">
+            <div className="pf-photo-box">
               {partyPhotoPreview ? (
-                <img src={partyPhotoPreview} alt="preview" className="w-24 h-24 object-cover rounded" />
+                <img src={partyPhotoPreview} alt="preview" className="pf-photo" />
               ) : (
-                <div className="text-xs text-gray-500">No hay foto</div>
+                <div className="pf-empty-photo">No hay foto</div>
               )}
             </div>
 
@@ -783,22 +784,22 @@ export default function PartyFormInline({
             <input type="hidden" name="defaultTargets" value={JSON.stringify(safeDraft.defaultTargets || [])} />
             <input type="hidden" name="checklist" value={JSON.stringify(safeDraft.checklist || [])} />
 
-            <div className="col-span-3 flex gap-2 mt-2">
+            <div className="pf-actions">
               <button
                 type="button"
                 onClick={() => handleSaveDraft(true)}
-                className="bg-green-600 text-white px-3 py-1 rounded"
+                className="pf-btn pf-btn-success"
               >
                 Guardar y usar
               </button>
               <button
                 type="button"
                 onClick={() => handleSaveDraft(false)}
-                className="bg-blue-500 text-white px-3 py-1 rounded"
+                className="pf-btn pf-btn-primary"
               >
                 Guardar (no seleccionar)
               </button>
-              <button type="button" onClick={onCancelForm} className="bg-gray-200 px-3 py-1 rounded">
+              <button type="button" onClick={onCancelForm} className="pf-btn pf-btn-ghost">
                 Cancelar
               </button>
             </div>

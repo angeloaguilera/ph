@@ -15,15 +15,49 @@ import InvoiceCurrencySection from "./InvoiceCurrencySection";
 import styles from "./InvoiceForm.module.css";
 
 type Props = {
-  onSave: (e?: any) => void;
-  onGenerateReports?: () => void;
+  onSave: (payload: any) => void | Promise<void>;
+  onGenerateReports?: () => void | Promise<void>;
+  onVoucherUrlChange?: (url: string) => void;
+  initialData?: any;
   initialValues?: any;
 };
 
-export default function InvoiceForm({ onSave, onGenerateReports, initialValues }: Props) {
-  const vm = useInvoiceFormViewModel(initialValues);
+function makeEmptyPartyDraft() {
+  return {
+    partyType: "NATURAL",
+    name: "",
+    firstName: "",
+    lastName: "",
+    companyName: "",
+    phone: "",
+    email: "",
+    address: "",
+    city: "",
+    state: "",
+    country: "",
+    rif: "",
+    nit: "",
+    checklist: [],
+    isPropietario: false,
+    role: "",
+    photoDataUrl: undefined,
+    companyId: "",
+    needsManualReview: false,
+  } as any;
+}
+
+export default function InvoiceForm({
+  onSave,
+  onGenerateReports,
+  onVoucherUrlChange,
+  initialData,
+  initialValues,
+}: Props) {
+  const vm = useInvoiceFormViewModel(initialData ?? initialValues, undefined);
 
   const {
+    voucherAddress,
+    setVoucherAddress,
     docKind,
     setDocKind,
     invoiceType,
@@ -165,6 +199,18 @@ export default function InvoiceForm({ onSave, onGenerateReports, initialValues }
     handleSubmit,
   } = vm;
 
+  React.useEffect(() => {
+    console.log("[InvoiceForm] effectiveVoucherUrl:", voucherAddress);
+  }, [voucherAddress]);
+
+  const handleVoucherUrlChange = React.useCallback(
+    (url: string) => {
+      setVoucherAddress(url);
+      onVoucherUrlChange?.(url);
+    },
+    [setVoucherAddress, onVoucherUrlChange]
+  );
+
   const resetCatalogSelection = React.useCallback(() => {
     setSelectedCatalogProductId("");
     setSelectedCatalogServiceId("");
@@ -190,8 +236,12 @@ export default function InvoiceForm({ onSave, onGenerateReports, initialValues }
         return;
       }
 
-      const existsInOptions = (productOptions || []).some((p: any) => matchById(p, id));
-      const existsInCatalog = (productsCatalog || []).some((p: any) => matchById(p, id));
+      const existsInOptions = (productOptions || []).some((p: any) =>
+        matchById(p, id)
+      );
+      const existsInCatalog = (productsCatalog || []).some((p: any) =>
+        matchById(p, id)
+      );
 
       if (!existsInOptions && !existsInCatalog) {
         alert("Producto no encontrado en el catálogo de la empresa.");
@@ -217,19 +267,42 @@ export default function InvoiceForm({ onSave, onGenerateReports, initialValues }
     }
   };
 
+  const handleFormSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
+    e.preventDefault();
+
+    try {
+      console.log("[InvoiceForm] effectiveVoucherUrl (submit):", voucherAddress);
+
+      const payload = await handleSubmit();
+
+      const response = await fetch("/api/invoices", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(payload),
+      });
+
+      const result = await response.json();
+
+      if (!response.ok) {
+        throw new Error(result?.error || "Error guardando la factura");
+      }
+
+      await onSave(result.data);
+    } catch (error) {
+      console.error("[InvoiceForm] error ejecutando submit:", error);
+      throw error;
+    }
+  };
+
   return (
-    <form
-      onSubmit={(e) => {
-        e.preventDefault();
-        handleSubmit(e, onSave);
-      }}
-      className={styles.form}
-    >
+    <form onSubmit={handleFormSubmit} className={styles.form}>
       <div className={styles.stack}>
         <section className={styles.section}>
           <InvoiceDocumentHeaderSection
-            docKind={docKind}
-            setDocKind={setDocKind}
+            docKind={docKind as any}
+            setDocKind={setDocKind as any}
             invoiceType={invoiceType}
             onInvoiceTypeChange={handleInvoiceTypeChange}
             invoiceName={invoiceName}
@@ -245,13 +318,15 @@ export default function InvoiceForm({ onSave, onGenerateReports, initialValues }
             destination={destination}
             setDestination={setDestination}
             bank={bank}
-            setBank={setBank}
+            setBank={setBank as any}
             caja={caja}
             setCaja={setCaja}
             paymentType={paymentType}
-            setPaymentType={setPaymentType}
+            setPaymentType={setPaymentType as any}
             referenceNumber={referenceNumber}
             setReferenceNumber={setReferenceNumber}
+            voucherUrl={voucherAddress}
+            setVoucherUrl={handleVoucherUrlChange}
           />
         </section>
 
@@ -297,21 +372,7 @@ export default function InvoiceForm({ onSave, onGenerateReports, initialValues }
               onOpenNew={() => {
                 setShowNewPartyForm(true);
                 setEditingPartyId(undefined);
-                setNewPartyDraft({
-                  partyType: "NATURAL",
-                  firstName: "",
-                  lastName: "",
-                  companyName: "",
-                  phone: "",
-                  email: "",
-                  address: "",
-                  city: "",
-                  country: "",
-                  rif: "",
-                  nit: "",
-                  photoDataUrl: undefined,
-                  companyId: "",
-                });
+                setNewPartyDraft(makeEmptyPartyDraft());
                 setPartyPhotoPreview(undefined);
                 resetCatalogSelection();
               }}
@@ -319,7 +380,10 @@ export default function InvoiceForm({ onSave, onGenerateReports, initialValues }
                 setEditingPartyId(selectedPartyId || undefined);
                 const found = parties.find((x: any) => x.id === selectedPartyId);
                 if (found) {
-                  setNewPartyDraft({ ...found });
+                  setNewPartyDraft({
+                    ...makeEmptyPartyDraft(),
+                    ...found,
+                  } as any);
                   setPartyPhotoPreview(found.photoDataUrl);
                   setShowNewPartyForm(true);
                 } else {
@@ -328,7 +392,7 @@ export default function InvoiceForm({ onSave, onGenerateReports, initialValues }
               }}
               showNewPartyForm={showNewPartyForm}
               newPartyDraft={newPartyDraft}
-              setNewPartyDraft={setNewPartyDraft}
+              setNewPartyDraft={setNewPartyDraft as any}
               partyPhotoPreview={partyPhotoPreview}
               onPhotoChange={handleNewPartyPhotoChange}
               onSaveDraft={(selectAfterSave?: boolean) => {
@@ -355,7 +419,11 @@ export default function InvoiceForm({ onSave, onGenerateReports, initialValues }
                 const found = parties.find((p: any) => p.id === id);
                 if (!found) return;
 
-                if (!confirm(`¿Eliminar a ${found.name}? Esta acción no se puede deshacer.`)) {
+                if (
+                  !confirm(
+                    `¿Eliminar a ${found.name}? Esta acción no se puede deshacer.`
+                  )
+                ) {
                   return;
                 }
 
@@ -368,15 +436,15 @@ export default function InvoiceForm({ onSave, onGenerateReports, initialValues }
         <section className={styles.section}>
           <InvoiceCurrencySection
             documentCurrency={documentCurrency}
-            setDocumentCurrency={setDocumentCurrency}
+            setDocumentCurrency={setDocumentCurrency as any}
             targetCurrency={targetCurrency}
-            setTargetCurrency={setTargetCurrency}
+            setTargetCurrency={setTargetCurrency as any}
             conversionEnabled={conversionEnabled}
-            setConversionEnabled={setConversionEnabled}
+            setConversionEnabled={setConversionEnabled as any}
             useAutoRate={useAutoRate}
-            setUseAutoRate={setUseAutoRate}
+            setUseAutoRate={setUseAutoRate as any}
             manualExchangeRate={manualExchangeRate}
-            setManualExchangeRate={setManualExchangeRate}
+            setManualExchangeRate={setManualExchangeRate as any}
             autoExchangeRate={autoExchangeRate}
             autoRateLoading={autoRateLoading}
             autoRateError={autoRateError}
@@ -416,7 +484,9 @@ export default function InvoiceForm({ onSave, onGenerateReports, initialValues }
               propertiesCatalog={propertiesCatalog}
               addProductFromCatalog={safeAddProductFromCatalog}
               addServiceFromCatalog={addServiceFromCatalog}
-              addProductFromCatalogAndMaybeActivate={addProductFromCatalogAndMaybeActivate}
+              addProductFromCatalogAndMaybeActivate={
+                addProductFromCatalogAndMaybeActivate
+              }
               removeCatalogProduct={removeCatalogProduct}
               removeCatalogService={removeCatalogService}
               removeCatalogProperty={removeCatalogProperty}
@@ -446,20 +516,22 @@ export default function InvoiceForm({ onSave, onGenerateReports, initialValues }
         <section className={styles.summaryBar}>
           <div className={styles.summaryTextBlock}>
             <div className={styles.summaryLabel}>Subtotal (líneas)</div>
-            <div className={styles.summaryValue}>{itemsSubtotal.toFixed(2)}</div>
+            <div className={styles.summaryValue}>
+              {itemsSubtotal.toFixed(2)}
+            </div>
           </div>
         </section>
 
         <section className={styles.section}>
           <InvoiceTotalsSection
-            docKind={docKind}
+            docKind={docKind as any}
             itemsSubtotal={itemsSubtotal}
             ivaPercent={ivaPercent}
-            setIvaPercent={setIvaPercent}
+            setIvaPercent={setIvaPercent as any}
             ivaRetenidoPercent={ivaRetenidoPercent}
-            setIvaRetenidoPercent={setIvaRetenidoPercent}
+            setIvaRetenidoPercent={setIvaRetenidoPercent as any}
             islrPercent={islrPercent}
-            setIslrPercent={setIslrPercent}
+            setIslrPercent={setIslrPercent as any}
             facturaIvaAmount={facturaIvaAmount}
             ivaRetenidoAmount={ivaRetenidoAmount}
             islrAmount={islrAmount}
@@ -489,7 +561,11 @@ export default function InvoiceForm({ onSave, onGenerateReports, initialValues }
           </button>
 
           {onGenerateReports && (
-            <button type="button" onClick={onGenerateReports} className={styles.secondaryButton}>
+            <button
+              type="button"
+              onClick={onGenerateReports}
+              className={styles.secondaryButton}
+            >
               Generar informes
             </button>
           )}

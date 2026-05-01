@@ -1,16 +1,29 @@
 "use client";
 
-import React, { useEffect, useMemo, useCallback } from "react";
+import React, { useEffect, useMemo, useCallback, useRef } from "react";
 import useInvoiceForm from "./hooks/useInvoiceForm";
 import useCatalogs from "./hooks/useCatalogs";
 import useExchangeRate, { CurrencyCode } from "./hooks/useExchangeRate";
 
-import { hasOwnerOrContractorMarker, normalizeCatalogRecordForSave, sameAnnexDocs, toDateTimeLocalValue, toNumber, getLineTotalValue } from "./invoiceHelpers";
+import {
+  hasOwnerOrContractorMarker,
+  normalizeCatalogRecordForSave,
+  sameAnnexDocs,
+  toDateTimeLocalValue,
+  toNumber,
+  getLineTotalValue,
+} from "./invoiceHelpers";
 import type { DocItem as AnnexDocItem } from "./AnnexesRow";
 
-import { hasExplicitCondoTrueFlag, forceGeneralCatalogRecord } from "./invoiceForm.helpers";
+import {
+  hasExplicitCondoTrueFlag,
+  forceGeneralCatalogRecord,
+} from "./invoiceForm.helpers";
 
-export default function useInvoiceFormViewModel(initialValues: any) {
+export default function useInvoiceFormViewModel(
+  initialValues: any,
+  onSave?: (payload: any) => void | Promise<any>
+) {
   const s = useInvoiceForm(initialValues);
 
   const {
@@ -97,7 +110,7 @@ export default function useInvoiceFormViewModel(initialValues: any) {
     amountOverride,
     setAmountOverride,
     total,
-    handleSubmit,
+    handleSubmit: handleSubmitLocal,
     partyKeyActive,
     buildPartyRecordFromDraft,
     handleSavePartyDraft,
@@ -143,6 +156,37 @@ export default function useInvoiceFormViewModel(initialValues: any) {
 
   const [islrPercent, setIslrPercent] = React.useState<number>(0);
 
+  const [saving, setSaving] = React.useState<boolean>(false);
+
+  const [voucherAddress, setVoucherAddressState] = React.useState<string>(() =>
+    String(
+      initialValues?.voucherAddress ??
+        initialValues?.voucherUrl ??
+        initialValues?.voucherURL ??
+        initialValues?.voucherDireccion ??
+        initialValues?.storage?.fileUrl ??
+        initialValues?.storage?.publicUrl ??
+        initialValues?.storage?.url ??
+        initialValues?.comprobanteUrl ??
+        initialValues?.comprobanteURL ??
+        ""
+    ).trim()
+  );
+
+  const voucherUrlRef = useRef<string>(String(voucherAddress ?? "").trim());
+
+  const setVoucherAddress = useCallback((url: string) => {
+    const clean = String(url ?? "").trim();
+    voucherUrlRef.current = clean;
+    setVoucherAddressState(clean);
+  }, []);
+
+  useEffect(() => {
+    voucherUrlRef.current = String(voucherAddress ?? "").trim();
+  }, [voucherAddress]);
+
+  const invoiceId = String(initialValues?.id ?? initialValues?._id ?? "");
+
   const [documentDateTime, setDocumentDateTime] = React.useState<string>(() =>
     toDateTimeLocalValue(
       initialValues?.documentDateTime ??
@@ -158,8 +202,8 @@ export default function useInvoiceFormViewModel(initialValues: any) {
       () => (initialValues?.documentCurrency as CurrencyCode) ?? "VES"
     );
 
-  const [targetCurrency, setTargetCurrency] = React.useState<CurrencyCode>(
-    () => (initialValues?.targetCurrency as CurrencyCode) ?? "USD"
+  const [targetCurrency, setTargetCurrency] = React.useState<CurrencyCode>(() =>
+    (initialValues?.targetCurrency as CurrencyCode) ?? "USD"
   );
 
   const [conversionEnabled, setConversionEnabled] =
@@ -196,6 +240,10 @@ export default function useInvoiceFormViewModel(initialValues: any) {
   }, [useAutoRate, autoExchangeRate, manualExchangeRate]);
 
   useEffect(() => {
+    console.log("[useInvoiceFormViewModel] voucherAddress:", voucherAddress);
+  }, [voucherAddress]);
+
+  useEffect(() => {
     const nextValue =
       initialValues?.documentDateTime ??
       initialValues?.fechaHora ??
@@ -219,16 +267,37 @@ export default function useInvoiceFormViewModel(initialValues: any) {
     if (initialValues?.targetCurrency) {
       setTargetCurrency(initialValues.targetCurrency as CurrencyCode);
     }
+
     const raw =
       initialValues?.exchangeRate ??
       initialValues?.tasaCambio ??
       initialValues?.rate;
+
     if (raw !== undefined && raw !== null && raw !== "") {
       const n = toNumber(raw);
       if (Number.isFinite(n) && n > 0) setManualExchangeRate(n);
     }
+
     if (typeof initialValues?.useAutoRate === "boolean") {
       setUseAutoRate(Boolean(initialValues.useAutoRate));
+    }
+
+    const voucher =
+      String(
+        initialValues?.voucherAddress ??
+          initialValues?.voucherUrl ??
+          initialValues?.voucherURL ??
+          initialValues?.voucherDireccion ??
+          initialValues?.storage?.fileUrl ??
+          initialValues?.storage?.publicUrl ??
+          initialValues?.storage?.url ??
+          initialValues?.comprobanteUrl ??
+          initialValues?.comprobanteURL ??
+          ""
+      ).trim();
+
+    if (voucher) {
+      setVoucherAddress(voucher);
     }
   }, [
     initialValues?.documentCurrency,
@@ -237,6 +306,15 @@ export default function useInvoiceFormViewModel(initialValues: any) {
     initialValues?.tasaCambio,
     initialValues?.rate,
     initialValues?.useAutoRate,
+    initialValues?.voucherAddress,
+    initialValues?.voucherUrl,
+    initialValues?.voucherURL,
+    initialValues?.storage?.fileUrl,
+    initialValues?.storage?.publicUrl,
+    initialValues?.storage?.url,
+    initialValues?.comprobanteUrl,
+    initialValues?.comprobanteURL,
+    setVoucherAddress,
   ]);
 
   const partyKey = partyKeyActive ?? "";
@@ -609,7 +687,9 @@ export default function useInvoiceFormViewModel(initialValues: any) {
     addItem(itemFallback);
 
     if (String(itemFallback.kind ?? "").toUpperCase() === "PROPERTY") {
-      setActivePropertyId(String(itemFallback.meta?.propertyId ?? itemFallback.id));
+      setActivePropertyId(
+        String(itemFallback.meta?.propertyId ?? itemFallback.id)
+      );
     }
   };
 
@@ -727,6 +807,27 @@ export default function useInvoiceFormViewModel(initialValues: any) {
     }
   };
 
+  const getPartyDisplayName = (record: unknown): string => {
+    const r = record as {
+      name?: unknown;
+      businessName?: unknown;
+      fullName?: unknown;
+      displayName?: unknown;
+      razonSocial?: unknown;
+      companyName?: unknown;
+    };
+
+    return String(
+      r?.name ??
+        r?.businessName ??
+        r?.fullName ??
+        r?.displayName ??
+        r?.razonSocial ??
+        r?.companyName ??
+        ""
+    );
+  };
+
   const handleSaveProperty = async (prop: any) => {
     try {
       const baseMeta = {
@@ -756,7 +857,10 @@ export default function useInvoiceFormViewModel(initialValues: any) {
       try {
         created = await createCatalogProperty(createRec);
       } catch (errCreate) {
-        console.warn("createCatalogProperty falló o no está disponible:", errCreate);
+        console.warn(
+          "createCatalogProperty falló o no está disponible:",
+          errCreate
+        );
       }
 
       const idToAdd = created?.id ?? prop?.id;
@@ -821,6 +925,83 @@ export default function useInvoiceFormViewModel(initialValues: any) {
       try {
         alert("Ocurrió un error guardando el inmueble.");
       } catch {}
+    }
+  };
+
+  const handleSubmit = async (evt?: { preventDefault?: () => void }) => {
+    evt?.preventDefault?.();
+
+    setSaving(true);
+    try {
+      const currentVoucherAddress = String(
+        voucherUrlRef.current || voucherAddress || ""
+      ).trim();
+
+      console.log("[handleSubmit] voucher:", currentVoucherAddress);
+
+      const customer = {
+        ...(selectedPartyRecord ?? {}),
+        ...(partyInfo ?? {}),
+        companyId:
+          partyKey ||
+          (selectedPartyRecord as any)?.companyId ||
+          (partyInfo as any)?.companyId ||
+          "",
+        name:
+          getPartyDisplayName(selectedPartyRecord) ||
+          getPartyDisplayName(partyInfo) ||
+          "",
+      };
+
+      const payload = {
+        invoice: {
+          id: invoiceId || undefined,
+          type: invoiceType,
+          docKind,
+          invoiceName,
+          date: documentDateTime,
+          amount: baseAmount,
+          iva: facturaIvaAmount,
+          ivaPercent,
+          ivaRetenido: ivaRetenidoAmount,
+          ivaRetenidoPercent,
+          islr: islrAmount,
+          islrPercent,
+          total: facturaTotalFinal,
+          numeroFactura,
+          numeroControl,
+          voucherAddress: currentVoucherAddress,
+          voucherUrl: currentVoucherAddress,
+          effectiveVoucherUrl: currentVoucherAddress,
+          items,
+          customer,
+          payment: {
+            method: paymentType,
+            reference: referenceNumber,
+          },
+          bank,
+        },
+        inventoryResult: {
+          inventory: [],
+          changes: {
+            created: [],
+            updated: [],
+          },
+        },
+      };
+
+      console.log("[handleSubmit] payload.invoice:", payload.invoice);
+
+      if (onSave) {
+        return await onSave(payload);
+      }
+
+      return payload;
+    } catch (error) {
+      console.error("[useInvoiceFormViewModel] Error preparando factura:", error);
+      throw error;
+    } finally {
+      setSaving(false);
     }
   };
 
@@ -909,6 +1090,12 @@ export default function useInvoiceFormViewModel(initialValues: any) {
     setAmountOverride,
     total,
     handleSubmit,
+    handleSubmitLocal,
+    saving,
+    loadingInvoice: false,
+    invoiceLoadError: null,
+    voucherAddress,
+    setVoucherAddress,
     partyKeyActive,
     buildPartyRecordFromDraft,
     handleSavePartyDraft,

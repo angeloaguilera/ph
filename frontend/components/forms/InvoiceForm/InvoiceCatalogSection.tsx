@@ -4,6 +4,7 @@ import ProductsSection from "./ProductsSection";
 import PropertyRow from "./PropertyRow";
 import AnnexesRow, { DocItem as AnnexDocItem } from "./AnnexesRow";
 import { EMPTY_ANNEX_LIST, matchById } from "./invoiceHelpers";
+import "./InvoiceCatalogSection.css";
 
 type Props = {
   catalogEnabled: boolean;
@@ -130,8 +131,8 @@ export default function InvoiceCatalogSection({
   }, [currentTx, partyHasOwnerOrContractor, partyKey]);
 
   return (
-    <>
-      <div className="border rounded p-3 mb-3">
+    <div className="invoice-catalog-section">
+      <div className="catalog-card">
         <ProductsSection
           catalogEnabled={catalogEnabled}
           partyKey={partyKey}
@@ -145,14 +146,13 @@ export default function InvoiceCatalogSection({
           setCatalogEditor={setCatalogEditor}
         />
 
-        <div className="mb-3 mt-3 grid grid-cols-2 gap-4 items-end">
-          <div>
-            <label className="block text-sm font-medium mb-1">
-              Servicios (Catálogo)
-            </label>
-            <div className="flex gap-2">
+        <div className="catalog-block">
+          <div className="catalog-field">
+            <label className="catalog-label">Servicios</label>
+
+            <div className="catalog-row">
               <select
-                className="flex-1 border rounded px-2 py-1"
+                className="catalog-select"
                 value={selectedCatalogServiceId}
                 onChange={(e) => {
                   if (!catalogEnabled) {
@@ -226,7 +226,7 @@ export default function InvoiceCatalogSection({
                   addServiceFromCatalog(selectedCatalogServiceId);
                   setSelectedCatalogServiceId("");
                 }}
-                className="px-3 py-1 bg-gray-200 rounded"
+                className="catalog-btn catalog-btn-primary"
                 disabled={!catalogEnabled}
               >
                 Agregar
@@ -258,7 +258,7 @@ export default function InvoiceCatalogSection({
                   removeCatalogService(selectedCatalogServiceId);
                   setSelectedCatalogServiceId("");
                 }}
-                className="px-3 py-1 bg-red-100 text-red-600 rounded"
+                className="catalog-btn catalog-btn-danger"
                 disabled={!catalogEnabled}
               >
                 Eliminar
@@ -268,31 +268,33 @@ export default function InvoiceCatalogSection({
         </div>
 
         {catalogEditor && (
-          <CatalogEditor
-            editor={catalogEditor}
-            onCancel={() => setCatalogEditor(null)}
-            onSave={async (rec) => {
-              await onSaveCatalogRecord({
-                kind: catalogEditor.kind,
-                mode: catalogEditor.mode,
-                rec,
-              });
-              setCatalogEditor(null);
-            }}
-          />
+          <div className="catalog-editor-wrap">
+            <CatalogEditor
+              editor={catalogEditor}
+              onCancel={() => setCatalogEditor(null)}
+              onSave={async (rec) => {
+                await onSaveCatalogRecord({
+                  kind: catalogEditor.kind,
+                  mode: catalogEditor.mode,
+                  rec,
+                });
+                setCatalogEditor(null);
+              }}
+            />
+          </div>
         )}
 
         {isSale && (
-          <div className="mb-4 mt-3 border rounded p-3">
-            <div className="text-sm font-medium mb-2">Inmuebles</div>
-            <div className="text-sm text-gray-600 mb-2">
+          <div className="catalog-section-box">
+            <div className="catalog-section-title">Inmuebles</div>
+            <div className="catalog-help-text">
               Agregar inmuebles vinculados a esta transacción (solo disponible
               para <strong>venta</strong>).
             </div>
 
-            <div className="flex gap-2 items-center mb-2">
+            <div className="catalog-row">
               <select
-                className="flex-1 border rounded px-2 py-1"
+                className="catalog-select"
                 value={selectedCatalogPropertyId}
                 onChange={(e) => {
                   if (!catalogEnabled) {
@@ -359,7 +361,7 @@ export default function InvoiceCatalogSection({
 
                   setShowNewPropertyForm(true);
                 }}
-                className="px-3 py-1 bg-gray-200 rounded"
+                className="catalog-btn catalog-btn-primary"
                 disabled={!catalogEnabled}
               >
                 Agregar
@@ -391,7 +393,7 @@ export default function InvoiceCatalogSection({
                   removeCatalogProperty(selectedCatalogPropertyId);
                   setSelectedCatalogPropertyId("");
                 }}
-                className="px-3 py-1 bg-red-100 text-red-600 rounded"
+                className="catalog-btn catalog-btn-danger"
                 disabled={!catalogEnabled}
               >
                 Eliminar
@@ -399,22 +401,22 @@ export default function InvoiceCatalogSection({
             </div>
 
             {!catalogEnabled && (
-              <div className="text-xs text-gray-500 mt-1">
+              <div className="catalog-note">
                 Selecciona un cliente/proveedor con companyId para habilitar
                 inmuebles, productos y servicios.
               </div>
             )}
 
             {showNewPropertyForm && (
-              <div className="mt-3">
-                <div className="flex justify-end mb-2">
+              <div className="catalog-new-form">
+                <div className="catalog-row-end">
                   <button
                     type="button"
                     onClick={() => {
                       setShowNewPropertyForm(false);
                       setSelectedCatalogPropertyId("");
                     }}
-                    className="text-sm text-gray-600"
+                    className="catalog-link-button"
                   >
                     Cancelar
                   </button>
@@ -446,12 +448,10 @@ export default function InvoiceCatalogSection({
             )}
 
             {annexActiveId ? (
-              <div className="mt-4 border rounded p-3 bg-gray-50">
-                <div className="flex items-center justify-between mb-2">
-                  <div className="text-sm font-medium">
-                    Anexos para el inmueble
-                  </div>
-                  <div className="text-xs text-gray-500">
+              <div className="catalog-annex-box">
+                <div className="catalog-annex-header">
+                  <div className="catalog-section-title">Anexos para el inmueble</div>
+                  <div className="catalog-annex-id">
                     Inmueble activo: <code>{annexActiveId}</code>
                   </div>
                 </div>
@@ -468,7 +468,7 @@ export default function InvoiceCatalogSection({
                 />
               </div>
             ) : (
-              <div className="mt-4 text-xs text-gray-500 italic">
+              <div className="catalog-note italic">
                 Los anexos se activan cuando seleccionas un inmueble.
               </div>
             )}
@@ -476,12 +476,12 @@ export default function InvoiceCatalogSection({
         )}
 
         {isPurchase && (
-          <div className="mb-4 mt-3 text-sm text-gray-500 italic">
+          <div className="catalog-purchase-note">
             Transacción de tipo <strong>compra</strong>: no está permitido
             agregar inmuebles en este formulario.
           </div>
         )}
       </div>
-    </>
+    </div>
   );
 }
