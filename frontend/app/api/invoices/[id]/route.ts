@@ -8,6 +8,9 @@ import {
 export const runtime = "nodejs";
 
 type AnyObj = Record<string, any>;
+type RouteContext = {
+  params: Promise<{ id: string }>;
+};
 
 function isObject(value: unknown): value is AnyObj {
   return typeof value === "object" && value !== null && !Array.isArray(value);
@@ -73,12 +76,9 @@ function injectVoucher(record: AnyObj) {
   };
 }
 
-export async function GET(
-  _req: Request,
-  { params }: { params: { id: string } }
-) {
+export async function GET(_req: Request, ctx: RouteContext) {
   try {
-    const { id } = params;
+    const { id } = await ctx.params;
     const found = await readInvoiceRecordById(id);
 
     if (!found) {
@@ -101,22 +101,21 @@ export async function GET(
   }
 }
 
-export async function PUT(
-  req: Request,
-  { params }: { params: { id: string } }
-) {
+export async function PUT(req: Request, ctx: RouteContext) {
   try {
-    const { id } = params;
+    const { id } = await ctx.params;
     const body = await req.json();
 
     const found = await readInvoiceRecordById(id);
 
-    const existing = found?.data ?? {
-      invoice: { id },
-      inventoryResult: { inventory: [], changes: { created: [], updated: [] } },
-    };
+    const existing =
+      found?.data ?? {
+        invoice: { id },
+        inventoryResult: { inventory: [], changes: { created: [], updated: [] } },
+      };
 
     const rawInvoice = isObject(body?.invoice) ? body.invoice : {};
+
     const voucherUrl = firstNonEmptyString(
       rawInvoice.voucherUrl,
       rawInvoice.effectiveVoucherUrl,
@@ -141,7 +140,7 @@ export async function PUT(
       voucherUrl,
       voucherAddress: voucherUrl,
       invoice: {
-        ...(body?.invoice ?? {}),
+        ...rawInvoice,
         id,
         voucherUrl,
         voucherAddress: voucherUrl,
@@ -160,12 +159,13 @@ export async function PUT(
   }
 }
 
-export async function DELETE(
-  _req: Request,
-  { params }: { params: { id: string } }
-) {
+export async function PATCH(req: Request, ctx: RouteContext) {
+  return PUT(req, ctx);
+}
+
+export async function DELETE(_req: Request, ctx: RouteContext) {
   try {
-    const { id } = params;
+    const { id } = await ctx.params;
     const deleted = await deleteInvoiceRecordById(id);
 
     if (!deleted) {

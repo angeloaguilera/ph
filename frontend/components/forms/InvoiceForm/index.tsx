@@ -199,6 +199,13 @@ export default function InvoiceForm({
     handleSubmit,
   } = vm;
 
+  const recordId = String(initialData?.id ?? initialValues?.id ?? "").trim();
+  const isEditMode = Boolean(recordId);
+  const submitUrl = isEditMode
+    ? `/api/invoices/${encodeURIComponent(recordId)}`
+    : "/api/invoices";
+  const submitMethod = isEditMode ? "PUT" : "POST";
+
   React.useEffect(() => {
     console.log("[InvoiceForm] effectiveVoucherUrl:", voucherAddress);
   }, [voucherAddress]);
@@ -275,8 +282,8 @@ export default function InvoiceForm({
 
       const payload = await handleSubmit();
 
-      const response = await fetch("/api/invoices", {
-        method: "POST",
+      const response = await fetch(submitUrl, {
+        method: submitMethod,
         headers: {
           "Content-Type": "application/json",
         },
@@ -557,7 +564,7 @@ export default function InvoiceForm({
 
         <div className={styles.actions}>
           <button type="submit" className={styles.primaryButton}>
-            Guardar cambios
+            {isEditMode ? "Actualizar cambios" : "Guardar cambios"}
           </button>
 
           {onGenerateReports && (
