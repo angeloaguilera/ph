@@ -18,11 +18,7 @@ import {
   extractValueAfterKeyword,
   isMeaningfulBaseName,
 } from "./invoiceDocumentHeader.parsers";
-import {
-  readExcelFile,
-  readImageWithOcr,
-  readPdfFile,
-} from "./invoiceDocumentHeader.readers";
+import { readExcelFile, readImageWithOcr, readPdfFile } from "./invoiceDocumentHeader.readers";
 import {
   InvoiceDocumentHeaderSectionProps,
   PreviewKind,
@@ -36,6 +32,7 @@ type DocKind = InvoiceDocumentHeaderSectionProps["docKind"];
 type InvoiceType = InvoiceDocumentHeaderSectionProps["invoiceType"];
 type Destination = InvoiceDocumentHeaderSectionProps["destination"];
 type PaymentType = InvoiceDocumentHeaderSectionProps["paymentType"];
+type FacturaAnulada = InvoiceDocumentHeaderSectionProps["facturaAnulada"];
 
 export default function InvoiceDocumentHeaderSection({
   docKind,
@@ -52,6 +49,8 @@ export default function InvoiceDocumentHeaderSection({
   setNumeroFactura,
   numeroControl,
   setNumeroControl,
+  facturaAnulada,
+  setFacturaAnulada,
   destination,
   setDestination,
   bank,
@@ -75,6 +74,7 @@ export default function InvoiceDocumentHeaderSection({
   const [localVoucherUrl, setLocalVoucherUrl] = useState<string>("");
   const [hasUserSelectedDate, setHasUserSelectedDate] = useState(false);
 
+  const isFacturaAnulada = facturaAnulada === "ANULADA";
   const effectiveVoucherUrl = voucherUrl ?? localVoucherUrl;
 
   useEffect(() => {
@@ -82,6 +82,15 @@ export default function InvoiceDocumentHeaderSection({
       if (previewUrl) URL.revokeObjectURL(previewUrl);
     };
   }, [previewUrl]);
+
+  useEffect(() => {
+    if (isFacturaAnulada) {
+      setBank("");
+      setCaja("");
+      setPaymentType("");
+      setReferenceNumber("");
+    }
+  }, [isFacturaAnulada, setBank, setCaja, setPaymentType, setReferenceNumber]);
 
   const setVoucherPath = (url: string) => {
     setLocalVoucherUrl(url);
@@ -400,11 +409,22 @@ export default function InvoiceDocumentHeaderSection({
                   placeholder="Ej. 00-006300"
                 />
               </Field>
+
+              <Field label="Estado de la factura">
+                <select
+                  className={selectClass(false)}
+                  value={facturaAnulada}
+                  onChange={(e) => setFacturaAnulada(e.target.value as FacturaAnulada)}
+                >
+                  <option value="NO_ANULADA">No anulada</option>
+                  <option value="ANULADA">Anulada</option>
+                </select>
+              </Field>
             </div>
           </div>
         )}
 
-        {docKind !== "NOMINA" && (
+        {docKind !== "NOMINA" && !isFacturaAnulada && (
           <div className="section-card">
             <h3 className="section-title">Destino y forma de pago</h3>
 

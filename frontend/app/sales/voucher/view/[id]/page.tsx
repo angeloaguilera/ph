@@ -5,41 +5,38 @@ import { useParams, useRouter } from "next/navigation";
 import type { Invoice } from "@/types/invoice";
 import styles from "./page.module.css";
 
-import html2canvas from "html2canvas";
-import jsPDF from "jspdf";
+import {
+  API_BASE,
+  STORAGE_KEY,
+  createInputStyle,
+  fromInputDate,
+  getRealVoucherUrl,
+  normalizeInvoiceForEdit,
+  recalcInvoiceTotals,
+  safeText,
+} from "../../lib/voucher/voucher.utils";
 
-const STORAGE_KEY = "invoices";
-
-const formatCurrency = (n?: number | string) => {
-  const v = Number(n ?? 0);
-  return new Intl.NumberFormat("es-ES", {
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 2,
-  }).format(v);
-};
-
-const formatDate = (value?: string) => {
-  if (!value) return "—";
-  const d = new Date(value);
-  if (Number.isNaN(d.getTime())) return value;
-  return new Intl.DateTimeFormat("es-ES", {
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-  }).format(d);
-};
-
-const safeText = (v?: string | null) => (v && v.trim().length ? v : "—");
+import { useVoucherDownloads } from "../../hooks/useVoucherDownloads";
+import { VoucherHeader } from "../../components/voucher/VoucherHeader";
+import { VoucherPaper } from "../../components/voucher/VoucherPaper";
 
 export default function VoucherViewPage() {
   const params = useParams<{ id: string }>();
   const router = useRouter();
 
   const [invoice, setInvoice] = useState<Invoice | null>(null);
+  const [editInvoice, setEditInvoice] = useState<any>(null);
+  const [editMode, setEditMode] = useState(false);
   const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [deleting, setDeleting] = useState(false);
   const [downloadType, setDownloadType] = useState("");
+  const [message, setMessage] = useState<string>("");
 
   const invoiceRef = useRef<HTMLDivElement | null>(null);
+
+  const { downloadAsPNG, downloadAsPDF, downloadAsExcel } =
+    useVoucherDownloads(invoiceRef);
 
   const id = useMemo(() => {
     const raw = params?.id;
@@ -66,170 +63,289 @@ export default function VoucherViewPage() {
         parsed.find((x: Invoice) => String(x.id) === String(id)) ?? null;
 
       setInvoice(found);
+      setEditInvoice(found ? normalizeInvoiceForEdit(found) : null);
     } catch (err) {
       console.error("Error cargando factura:", err);
       setInvoice(null);
+      setEditInvoice(null);
     } finally {
       setLoading(false);
     }
   }, [id]);
 
-  const downloadAsPNG = async () => {
-    if (!invoiceRef.current || !invoice) return;
-
-    const canvas = await html2canvas(invoiceRef.current, {
-      scale: 2,
-      backgroundColor: "#ffffff",
-      useCORS: true,
-    });
-
-    const dataUrl = canvas.toDataURL("image/png");
-    const a = document.createElement("a");
-    a.href = dataUrl;
-    a.download = `factura-${invoice.id}.png`;
-    a.click();
-  };
-
-  const downloadAsPDF = async () => {
-    if (!invoiceRef.current || !invoice) return;
-
-    const canvas = await html2canvas(invoiceRef.current, {
-      scale: 2,
-      backgroundColor: "#ffffff",
-      useCORS: true,
-    });
-
-    const imgData = canvas.toDataURL("image/png");
-
-    const pdf = new jsPDF("p", "mm", "a4");
-    const pageWidth = pdf.internal.pageSize.getWidth();
-    const pageHeight = pdf.internal.pageSize.getHeight();
-
-    const imgWidth = pageWidth;
-    const imgHeight = (canvas.height * imgWidth) / canvas.width;
-
-    let heightLeft = imgHeight;
-    let position = 0;
-
-    pdf.addImage(imgData, "PNG", 0, position, imgWidth, imgHeight);
-    heightLeft -= pageHeight;
-
-    while (heightLeft > 0) {
-      pdf.addPage();
-      position = -((imgHeight - heightLeft) as number);
-      pdf.addImage(imgData, "PNG", 0, position, imgWidth, imgHeight);
-      heightLeft -= pageHeight;
+  useEffect(() => {
+    if (invoice && !editInvoice) {
+      setEditInvoice(normalizeInvoiceForEdit(invoice));
     }
+  }, [invoice, editInvoice]);
 
-    pdf.save(`factura-${invoice.id}.pdf`);
+  const getActiveInvoice = () => {
+    return editMode && editInvoice
+      ? recalcInvoiceTotals(editInvoice)
+      : invoice;
   };
 
-  const downloadAsExcel = async () => {
-    if (!invoice) return;
-
-    const XLSX = await import("xlsx");
-
-    const inv: any = invoice;
-    const items: any[] = Array.isArray(inv.items) ? inv.items : [];
-    const customer = inv.customer ?? {};
-    const payment = inv.payment ?? {};
-
-    const subtotal = Number(inv.amount ?? 0);
-    const iva = Number(inv.iva ?? 0);
-    const total = Number(inv.total ?? subtotal + iva);
-    const ivaPercent = Number(inv.ivaPercent ?? 0);
-
-    const summaryRows = [
-      { Campo: "ID", Valor: safeText(inv.id) },
-      { Campo: "Tipo", Valor: safeText(inv.type) },
-      { Campo: "Documento", Valor: safeText(inv.docKind) },
-      { Campo: "Número de factura", Valor: safeText(inv.numeroFactura) },
-      { Campo: "Número de control", Valor: safeText(inv.numeroControl) },
-      { Campo: "Fecha", Valor: formatDate(inv.date) },
-      { Campo: "Banco", Valor: safeText(inv.bank) },
-      { Campo: "Nombre factura", Valor: safeText(inv.invoiceName) },
-      { Campo: "Cliente", Valor: safeText(customer.name) },
-      { Campo: "RIF", Valor: safeText(customer.rif) },
-      { Campo: "Teléfono", Valor: safeText(customer.phone) },
-      { Campo: "Email", Valor: safeText(customer.email) },
-      { Campo: "Dirección", Valor: safeText(customer.address) },
-      { Campo: "Método de pago", Valor: safeText(payment.method) },
-      { Campo: "Referencia", Valor: safeText(payment.reference) },
-      { Campo: "Subtotal", Valor: formatCurrency(subtotal) },
-      { Campo: `IVA ${ivaPercent ? `(${ivaPercent}%)` : ""}`.trim(), Valor: formatCurrency(iva) },
-      { Campo: "Total", Valor: formatCurrency(total) },
-    ];
-
-    const itemsRows =
-      items.length > 0
-        ? items.map((it) => {
-            const qty = Number(it.quantity ?? 1);
-            const unit = Number(it.unitPrice ?? it.rate ?? 0);
-            const lineTotal = Number(it.total ?? qty * unit);
-
-            return {
-              Descripción: safeText(it.name),
-              Cantidad: qty,
-              "Precio unitario": unit,
-              Total: lineTotal,
-              Tipo: safeText(it.kind),
-              "Descripción servicio": safeText(it.serviceDescription),
-            };
-          })
-        : [{ Descripción: "No hay items registrados." }];
-
-    const wb = XLSX.utils.book_new();
-
-    const wsSummary = XLSX.utils.json_to_sheet(summaryRows);
-    const wsItems = XLSX.utils.json_to_sheet(itemsRows);
-
-    XLSX.utils.book_append_sheet(wb, wsSummary, "Resumen");
-    XLSX.utils.book_append_sheet(wb, wsItems, "Items");
-
-    XLSX.writeFile(wb, `factura-${invoice.id}.xlsx`);
-  };
-
-  const handleDownloadChange = async (
-    e: React.ChangeEvent<HTMLSelectElement>
-  ) => {
-    const value = e.target.value;
-    setDownloadType("");
-
-    try {
-      if (value === "pdf") {
-        await downloadAsPDF();
-      } else if (value === "excel") {
-        await downloadAsExcel();
-      } else if (value === "image") {
-        await downloadAsPNG();
-      }
-    } finally {
-      e.target.value = "";
-    }
-  };
-
-  const getRealVoucherUrl = () => {
-    if (!invoice) return "";
-
-    const raw =
-      (invoice as any)?.effectiveVoucherUrl ||
-      (invoice as any)?.voucherUrl ||
-      (invoice as any)?.voucherAddress ||
-      "";
-
-    if (!raw) return "";
-
-    if (raw.startsWith("http://") || raw.startsWith("https://")) {
-      return raw;
-    }
-
-    return raw.startsWith("/") ? raw : `/${raw}`;
+  const getActiveVoucherUrl = () => {
+    return getRealVoucherUrl(editMode && editInvoice ? editInvoice : invoice);
   };
 
   const viewRealInvoice = () => {
-    const url = getRealVoucherUrl();
+    const url = getActiveVoucherUrl();
     if (!url) return;
     window.open(url, "_blank", "noopener,noreferrer");
+  };
+
+  const syncLocalStorage = (updatedInvoice: any) => {
+    try {
+      const raw = localStorage.getItem(STORAGE_KEY);
+      if (!raw) return;
+
+      const parsed = JSON.parse(raw);
+      if (!Array.isArray(parsed)) return;
+
+      const next = parsed.map((x: any) =>
+        String(x.id) === String(updatedInvoice.id) ? updatedInvoice : x
+      );
+
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(next));
+    } catch (err) {
+      console.error("Error sincronizando localStorage:", err);
+    }
+  };
+
+  const handleStartEdit = () => {
+    if (!invoice) return;
+    setEditInvoice(normalizeInvoiceForEdit(invoice));
+    setEditMode(true);
+    setMessage("");
+  };
+
+  const handleCancelEdit = () => {
+    if (invoice) setEditInvoice(normalizeInvoiceForEdit(invoice));
+    setEditMode(false);
+    setMessage("Edición cancelada.");
+  };
+
+  const handleTopFieldChange = (field: string, value: any) => {
+    setEditInvoice((prev: any) => ({
+      ...prev,
+      [field]: value,
+    }));
+  };
+
+  const handleCustomerChange = (field: string, value: any) => {
+    setEditInvoice((prev: any) => ({
+      ...prev,
+      customer: {
+        ...(prev?.customer ?? {}),
+        [field]: value,
+      },
+    }));
+  };
+
+  const handlePaymentChange = (field: string, value: any) => {
+    setEditInvoice((prev: any) => ({
+      ...prev,
+      payment: {
+        ...(prev?.payment ?? {}),
+        [field]: value,
+      },
+    }));
+  };
+
+  const handleItemChange = (index: number, field: string, value: any) => {
+    setEditInvoice((prev: any) => {
+      const items = Array.isArray(prev?.items) ? [...prev.items] : [];
+      const nextItem = {
+        ...(items[index] ?? {
+          id: `item-${Date.now()}-${Math.random().toString(16).slice(2)}`,
+          name: "",
+          kind: "",
+          serviceDescription: "",
+          quantity: 1,
+          unitPrice: 0,
+          rate: 0,
+          total: 0,
+        }),
+        [field]: value,
+      };
+
+      if (field === "quantity" || field === "unitPrice" || field === "rate") {
+        const qty = Number(nextItem.quantity ?? 0);
+        const unit = Number(nextItem.unitPrice ?? nextItem.rate ?? 0);
+        nextItem.quantity = qty;
+        nextItem.unitPrice = unit;
+        nextItem.rate = unit;
+        nextItem.total = Number((qty * unit).toFixed(2));
+      }
+
+      if (field === "total") {
+        nextItem.total = Number(value);
+      }
+
+      items[index] = nextItem;
+      return {
+        ...prev,
+        items,
+      };
+    });
+  };
+
+  const addItem = () => {
+    setEditInvoice((prev: any) => ({
+      ...prev,
+      items: Array.isArray(prev?.items)
+        ? [
+            ...prev.items,
+            {
+              id: `item-${Date.now()}-${Math.random().toString(16).slice(2)}`,
+              name: "",
+              kind: "",
+              serviceDescription: "",
+              quantity: 1,
+              unitPrice: 0,
+              rate: 0,
+              total: 0,
+            },
+          ]
+        : [
+            {
+              id: `item-${Date.now()}-${Math.random().toString(16).slice(2)}`,
+              name: "",
+              kind: "",
+              serviceDescription: "",
+              quantity: 1,
+              unitPrice: 0,
+              rate: 0,
+              total: 0,
+            },
+          ],
+    }));
+  };
+
+  const removeItem = (index: number) => {
+    setEditInvoice((prev: any) => ({
+      ...prev,
+      items: Array.isArray(prev?.items)
+        ? prev.items.filter((_: any, i: number) => i !== index)
+        : [],
+    }));
+  };
+
+  const handleDeleteInvoice = async () => {
+    if (!invoice) return;
+
+    const ok = window.confirm(
+      "¿Seguro que quieres eliminar esta factura? Esta acción no se puede deshacer."
+    );
+    if (!ok) return;
+
+    setDeleting(true);
+    setMessage("");
+
+    try {
+      const res = await fetch(`${API_BASE}/${invoice.id}`, {
+        method: "DELETE",
+        headers: {
+          "Content-Type": "application/json",
+        },
+      });
+
+      if (!res.ok) {
+        const txt = await res.text().catch(() => "");
+        throw new Error(txt || `Error al eliminar: ${res.status}`);
+      }
+
+      try {
+        const raw = localStorage.getItem(STORAGE_KEY);
+        if (raw) {
+          const parsed = JSON.parse(raw);
+          if (Array.isArray(parsed)) {
+            const next = parsed.filter(
+              (x: any) => String(x.id) !== String(invoice.id)
+            );
+            localStorage.setItem(STORAGE_KEY, JSON.stringify(next));
+          }
+        }
+      } catch (storageErr) {
+        console.error("Error actualizando localStorage tras delete:", storageErr);
+      }
+
+      setMessage("Factura eliminada correctamente.");
+      router.push("/sales/voucher");
+    } catch (err: any) {
+      console.error(err);
+      setMessage(err?.message || "No se pudo eliminar la factura.");
+    } finally {
+      setDeleting(false);
+    }
+  };
+
+  const handleSaveInvoice = async () => {
+    if (!editInvoice || !invoice) return;
+
+    setSaving(true);
+    setMessage("");
+
+    try {
+      const payload = recalcInvoiceTotals({
+        ...editInvoice,
+        date: editInvoice.date ? fromInputDate(editInvoice.date) : invoice.date,
+      });
+
+      const res = await fetch(`${API_BASE}/${invoice.id}`, {
+        method: "PATCH",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(payload),
+      });
+
+      if (!res.ok) {
+        const txt = await res.text().catch(() => "");
+        throw new Error(txt || `Error al publicar: ${res.status}`);
+      }
+
+      const data = await res.json().catch(() => null);
+      const updatedInvoice = data?.invoice ?? data?.data ?? data ?? payload;
+
+      setInvoice(updatedInvoice);
+      setEditInvoice(normalizeInvoiceForEdit(updatedInvoice));
+      syncLocalStorage(updatedInvoice);
+      setEditMode(false);
+      setMessage("Factura publicada correctamente.");
+    } catch (err: any) {
+      console.error(err);
+      setMessage(err?.message || "No se pudo publicar la factura.");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleEditOrPublish = async () => {
+    if (editMode) {
+      await handleSaveInvoice();
+      return;
+    }
+    handleStartEdit();
+  };
+
+  const handleDownloadTypeChange = async (value: string) => {
+    setDownloadType(value);
+
+    try {
+      const current = getActiveInvoice();
+
+      if (value === "pdf" && current) {
+        await downloadAsPDF(current.id);
+      } else if (value === "excel" && current) {
+        await downloadAsExcel(current);
+      } else if (value === "image" && current) {
+        await downloadAsPNG(current.id);
+      }
+    } catch (err) {
+      console.error("Error al descargar:", err);
+    }
   };
 
   if (loading) {
@@ -270,255 +386,63 @@ export default function VoucherViewPage() {
     );
   }
 
-  const inv: any = invoice;
-  const items: any[] = Array.isArray(inv.items) ? inv.items : [];
-  const customer = inv.customer ?? {};
-  const payment = inv.payment ?? {};
-
-  const subtotal = Number(inv.amount ?? 0);
-  const iva = Number(inv.iva ?? 0);
-  const total = Number(inv.total ?? subtotal + iva);
-  const ivaPercent = Number(inv.ivaPercent ?? 0);
-
-  const numeroFactura = safeText(inv.numeroFactura);
-  const numeroControl = safeText(inv.numeroControl);
-
-  const hasVoucher = Boolean(getRealVoucherUrl());
+  const activeInvoice: any = getActiveInvoice();
+  const hasVoucher = Boolean(getActiveVoucherUrl());
+  const inputStyle = createInputStyle();
 
   return (
     <div className={styles.page}>
       <div className={styles.container}>
         <div className={styles.shell}>
-          <div className={styles.topbar}>
-            <div className={styles.topbarLeft}>
-              <h1 className={styles.topTitle}>Vista de factura</h1>
-              <p className={styles.topSubtitle}>
-                {safeText(inv.type)} · {safeText(inv.docKind)} ·{" "}
-                {formatDate(inv.date)}
-              </p>
+          <VoucherHeader
+            title="Vista de factura"
+            subtitle={`${safeText(activeInvoice?.type)} · ${safeText(
+              activeInvoice?.docKind
+            )} · ${safeText(
+              activeInvoice?.date ? new Date(activeInvoice.date).toISOString() : ""
+            )}`}
+            hasVoucher={hasVoucher}
+            editMode={editMode}
+            saving={saving}
+            deleting={deleting}
+            downloadType={downloadType}
+            onBack={() => router.back()}
+            onViewReal={viewRealInvoice}
+            onDownloadTypeChange={handleDownloadTypeChange}
+            onEditOrPublish={handleEditOrPublish}
+            onCancelEdit={handleCancelEdit}
+            onDeleteInvoice={handleDeleteInvoice}
+          />
+
+          {message ? (
+            <div
+              style={{
+                marginBottom: 16,
+                padding: "10px 12px",
+                borderRadius: 10,
+                background: "#f8fafc",
+                border: "1px solid #e2e8f0",
+                color: "#334155",
+                fontSize: 14,
+              }}
+            >
+              {message}
             </div>
+          ) : null}
 
-            <div className={styles.actions}>
-              <button className={styles.button} onClick={() => router.back()}>
-                Volver
-              </button>
-
-              <button
-                className={styles.primary}
-                onClick={viewRealInvoice}
-                disabled={!hasVoucher}
-                title={
-                  hasVoucher
-                    ? "Abrir la factura real"
-                    : "No hay imagen de factura disponible"
-                }
-              >
-                Ver factura real
-              </button>
-
-              <select
-                className={styles.button}
-                value={downloadType}
-                onChange={handleDownloadChange}
-                aria-label="Descargar"
-                title="Descargar"
-              >
-                <option value="">Descargar</option>
-                <option value="pdf">PDF</option>
-                <option value="excel">Excel</option>
-                <option value="image">Imagen</option>
-              </select>
-
-              <button
-                className={styles.button}
-                onClick={() => router.push(`/sales/voucher/edit/${inv.id}`)}
-              >
-                Editar
-              </button>
-            </div>
-          </div>
-
-          <div className={styles.paperWrap}>
-            <div className={styles.paper} ref={invoiceRef}>
-              <div className={styles.paperHeader}>
-                <div className={styles.brandBlock}>
-                  <div className={styles.logoBox} aria-hidden="true">
-                    <div className={styles.logoMark} />
-                  </div>
-                  <div>
-                    <div className={styles.brandName}>TU EMPRESA</div>
-                    <div className={styles.brandMeta}>
-                      Dirección: — · Tel: — · Email: —
-                    </div>
-                  </div>
-                </div>
-
-                <div className={styles.docBlock}>
-                  <div className={styles.docTitle}>
-                    {safeText(inv.docKind ?? "FACTURA")}
-                  </div>
-                  <div className={styles.docRow}>
-                    <span className={styles.docLabel}>Nro / ID:</span>
-                    <span className={styles.docValue}>{safeText(inv.id)}</span>
-                  </div>
-                  <div className={styles.docRow}>
-                    <span className={styles.docLabel}>Nro Factura:</span>
-                    <span className={styles.docValue}>{numeroFactura}</span>
-                  </div>
-                  <div className={styles.docRow}>
-                    <span className={styles.docLabel}>Nro Control:</span>
-                    <span className={styles.docValue}>{numeroControl}</span>
-                  </div>
-                  <div className={styles.docRow}>
-                    <span className={styles.docLabel}>Fecha:</span>
-                    <span className={styles.docValue}>
-                      {formatDate(inv.date)}
-                    </span>
-                  </div>
-                  <div className={styles.docRow}>
-                    <span className={styles.docLabel}>Banco:</span>
-                    <span className={styles.docValue}>{safeText(inv.bank)}</span>
-                  </div>
-                </div>
-              </div>
-
-              <div className={styles.invoiceName}>
-                {safeText(inv.invoiceName)}
-              </div>
-
-              <div className={styles.blocks}>
-                <div className={styles.block}>
-                  <div className={styles.blockTitle}>Cliente</div>
-                  <div className={styles.blockLine}>
-                    <span className={styles.k}>Nombre:</span>
-                    <span className={styles.v}>{safeText(customer.name)}</span>
-                  </div>
-                  <div className={styles.blockLine}>
-                    <span className={styles.k}>RIF:</span>
-                    <span className={styles.v}>{safeText(customer.rif)}</span>
-                  </div>
-                  <div className={styles.blockLine}>
-                    <span className={styles.k}>Teléfono:</span>
-                    <span className={styles.v}>{safeText(customer.phone)}</span>
-                  </div>
-                  <div className={styles.blockLine}>
-                    <span className={styles.k}>Email:</span>
-                    <span className={styles.v}>{safeText(customer.email)}</span>
-                  </div>
-                  <div className={styles.blockLine}>
-                    <span className={styles.k}>Dirección:</span>
-                    <span className={styles.v}>{safeText(customer.address)}</span>
-                  </div>
-                </div>
-
-                <div className={styles.block}>
-                  <div className={styles.blockTitle}>Pago</div>
-                  <div className={styles.blockLine}>
-                    <span className={styles.k}>Método:</span>
-                    <span className={styles.v}>{safeText(payment.method)}</span>
-                  </div>
-                  <div className={styles.blockLine}>
-                    <span className={styles.k}>Referencia:</span>
-                    <span className={styles.v}>
-                      {safeText(payment.reference)}
-                    </span>
-                  </div>
-                  <div className={styles.blockLine}>
-                    <span className={styles.k}>Tipo:</span>
-                    <span className={styles.v}>{safeText(inv.type)}</span>
-                  </div>
-                  <div className={styles.blockLine}>
-                    <span className={styles.k}>Documento:</span>
-                    <span className={styles.v}>{safeText(inv.docKind)}</span>
-                  </div>
-                </div>
-              </div>
-
-              <div className={styles.table}>
-                <div className={styles.thead}>
-                  <div className={styles.th}>Descripción</div>
-                  <div className={styles.thCenter}>Cant.</div>
-                  <div className={styles.thRight}>Precio Unit.</div>
-                  <div className={styles.thRight}>Total</div>
-                </div>
-
-                {items.length === 0 ? (
-                  <div className={styles.trow}>
-                    <div className={styles.td} style={{ gridColumn: "1 / -1" }}>
-                      No hay items registrados.
-                    </div>
-                  </div>
-                ) : (
-                  items.map((it) => {
-                    const qty = Number(it.quantity ?? 1);
-                    const unit = Number(it.unitPrice ?? it.rate ?? 0);
-                    const lineTotal = Number(it.total ?? qty * unit);
-
-                    return (
-                      <div className={styles.trow} key={String(it.id ?? it.name)}>
-                        <div className={styles.td}>
-                          <div className={styles.itemName}>
-                            {safeText(it.name)}
-                          </div>
-                          <div className={styles.itemMeta}>
-                            {safeText(it.kind)}{" "}
-                            {it.serviceDescription
-                              ? `· ${it.serviceDescription}`
-                              : ""}
-                          </div>
-                        </div>
-                        <div className={styles.tdCenter}>{qty}</div>
-                        <div className={styles.tdRight}>
-                          {formatCurrency(unit)}
-                        </div>
-                        <div className={styles.tdRight}>
-                          {formatCurrency(lineTotal)}
-                        </div>
-                      </div>
-                    );
-                  })
-                )}
-              </div>
-
-              <div className={styles.totals}>
-                <div className={styles.totalsBox}>
-                  <div className={styles.totalRow}>
-                    <span className={styles.totalLabel}>Subtotal</span>
-                    <span className={styles.totalValue}>
-                      {formatCurrency(subtotal)}
-                    </span>
-                  </div>
-                  <div className={styles.totalRow}>
-                    <span className={styles.totalLabel}>
-                      IVA {ivaPercent ? `(${ivaPercent}%)` : ""}
-                    </span>
-                    <span className={styles.totalValue}>
-                      {formatCurrency(iva)}
-                    </span>
-                  </div>
-                  <div className={styles.totalDivider} />
-                  <div className={styles.totalRowBig}>
-                    <span className={styles.totalLabelBig}>TOTAL</span>
-                    <span className={styles.totalValueBig}>
-                      {formatCurrency(total)}
-                    </span>
-                  </div>
-                </div>
-              </div>
-
-              <div className={styles.footer}>
-                <div className={styles.footerNote}>
-                  Gracias por su compra. Este documento fue generado
-                  electrónicamente.
-                </div>
-                <div className={styles.footerFine}>
-                  Nro Factura: {numeroFactura} · Nro Control: {numeroControl} ·{" "}
-                  ID: {safeText(inv.id)} · Fecha: {formatDate(inv.date)} · Banco:{" "}
-                  {safeText(inv.bank)}
-                </div>
-              </div>
-            </div>
-          </div>
+          <VoucherPaper
+            invoiceRef={invoiceRef}
+            activeInvoice={activeInvoice}
+            editMode={editMode}
+            editInvoice={editInvoice}
+            inputStyle={inputStyle}
+            onTopFieldChange={handleTopFieldChange}
+            onCustomerChange={handleCustomerChange}
+            onPaymentChange={handlePaymentChange}
+            onItemChange={handleItemChange}
+            onAddItem={addItem}
+            onRemoveItem={removeItem}
+          />
 
           <div className={styles.hint}>
             Tip: lo que se exporta a PDF/imagen es el bloque blanco (“paper”).

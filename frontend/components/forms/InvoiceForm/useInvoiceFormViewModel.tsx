@@ -7,18 +7,22 @@ import useExchangeRate, { CurrencyCode } from "./hooks/useExchangeRate";
 
 import {
   hasOwnerOrContractorMarker,
-  normalizeCatalogRecordForSave,
   sameAnnexDocs,
-  toDateTimeLocalValue,
-  toNumber,
-  getLineTotalValue,
 } from "./invoiceHelpers";
 import type { DocItem as AnnexDocItem } from "./AnnexesRow";
+import { toNumber } from "./invoiceHelpers";
 
 import {
-  hasExplicitCondoTrueFlag,
-  forceGeneralCatalogRecord,
-} from "./invoiceForm.helpers";
+  buildCustomerRecord,
+  buildConversionInfo,
+  buildInvoiceTotals,
+  buildItemsSubtotal,
+  getInitialDocumentDateTime,
+  getInitialVoucherAddress,
+} from "./invoiceFormViewModel.utils";
+
+import { useInvoiceItemSafety } from "./invoiceFormViewModel.items";
+import { useInvoiceCatalogActions } from "./invoiceFormViewModel.catalog";
 
 export default function useInvoiceFormViewModel(
   initialValues: any,
@@ -156,21 +160,14 @@ export default function useInvoiceFormViewModel(
 
   const [islrPercent, setIslrPercent] = React.useState<number>(0);
 
+  const [facturaAnulada, setFacturaAnulada] = React.useState<
+    "NO_ANULADA" | "ANULADA"
+  >(() => (initialValues?.facturaAnulada as "NO_ANULADA" | "ANULADA") ?? "NO_ANULADA");
+
   const [saving, setSaving] = React.useState<boolean>(false);
 
   const [voucherAddress, setVoucherAddressState] = React.useState<string>(() =>
-    String(
-      initialValues?.voucherAddress ??
-        initialValues?.voucherUrl ??
-        initialValues?.voucherURL ??
-        initialValues?.voucherDireccion ??
-        initialValues?.storage?.fileUrl ??
-        initialValues?.storage?.publicUrl ??
-        initialValues?.storage?.url ??
-        initialValues?.comprobanteUrl ??
-        initialValues?.comprobanteURL ??
-        ""
-    ).trim()
+    getInitialVoucherAddress(initialValues)
   );
 
   const voucherUrlRef = useRef<string>(String(voucherAddress ?? "").trim());
@@ -188,13 +185,7 @@ export default function useInvoiceFormViewModel(
   const invoiceId = String(initialValues?.id ?? initialValues?._id ?? "");
 
   const [documentDateTime, setDocumentDateTime] = React.useState<string>(() =>
-    toDateTimeLocalValue(
-      initialValues?.documentDateTime ??
-        initialValues?.fechaHora ??
-        initialValues?.dateTime ??
-        initialValues?.createdAt ??
-        new Date()
-    )
+    getInitialDocumentDateTime(initialValues)
   );
 
   const [documentCurrency, setDocumentCurrency] =
@@ -251,7 +242,7 @@ export default function useInvoiceFormViewModel(
       initialValues?.createdAt;
 
     if (nextValue) {
-      setDocumentDateTime(toDateTimeLocalValue(nextValue));
+      setDocumentDateTime(getInitialDocumentDateTime(initialValues));
     }
   }, [
     initialValues?.documentDateTime,
@@ -282,23 +273,8 @@ export default function useInvoiceFormViewModel(
       setUseAutoRate(Boolean(initialValues.useAutoRate));
     }
 
-    const voucher =
-      String(
-        initialValues?.voucherAddress ??
-          initialValues?.voucherUrl ??
-          initialValues?.voucherURL ??
-          initialValues?.voucherDireccion ??
-          initialValues?.storage?.fileUrl ??
-          initialValues?.storage?.publicUrl ??
-          initialValues?.storage?.url ??
-          initialValues?.comprobanteUrl ??
-          initialValues?.comprobanteURL ??
-          ""
-      ).trim();
-
-    if (voucher) {
-      setVoucherAddress(voucher);
-    }
+    const voucher = getInitialVoucherAddress(initialValues);
+    if (voucher) setVoucherAddress(voucher);
   }, [
     initialValues?.documentCurrency,
     initialValues?.targetCurrency,
@@ -513,94 +489,44 @@ export default function useInvoiceFormViewModel(
     ]
   );
 
-  const safeUpdateItem = async (index: number, patch: Partial<any>) => {
-    try {
-      await (updateItem as any)(index, patch);
-      return;
-    } catch {}
+  const {
+    safeUpdateItem,
+    safeRemoveItem,
+    safeOnItemPhotosChange,
+    safeOnRemoveItemPhoto,
+  } = useInvoiceItemSafety({
+    items,
+    updateItem,
+    removeItem,
+    handleItemPhotosChange,
+    removeItemPhoto,
+    activePropertyId,
+    setActivePropertyId,
+    setPropertyAnnexes,
+  });
 
-    const item = items[index];
-    if (!item) return;
-    const id = String((item as any).id ?? index);
-
-    try {
-      await (updateItem as any)(id, patch);
-    } catch (e2) {
-      console.warn("safeUpdateItem: updateItem falló con index e id", e2);
-    }
-  };
-
-  const safeRemoveItem = async (index: number) => {
-    const item = items[index];
-
-    try {
-      await (removeItem as any)(index);
-      return;
-    } catch {}
-
-    if (item) {
-      const id = String((item as any).id ?? index);
-      try {
-        await (removeItem as any)(id);
-      } catch (e2) {
-        console.warn("safeRemoveItem: removeItem falló con index e id", e2);
-      }
-    }
-
-    try {
-      const meta = (item as any)?.meta ?? {};
-      const isProp =
-        String((item as any)?.kind ?? "").toUpperCase() === "PROPERTY" ||
-        Boolean(meta?.propertyId);
-
-      const propId = String(meta?.propertyId ?? item?.id ?? "");
-      if (isProp && propId) {
-        if (propId === activePropertyId) setActivePropertyId("");
-        setPropertyAnnexes((prev) => {
-          const copy = { ...prev };
-          delete copy[propId];
-          return copy;
-        });
-      }
-    } catch {}
-  };
-
-  const safeOnItemPhotosChange = async (
-    index: number,
-    files: FileList | null
-  ) => {
-    try {
-      await (handleItemPhotosChange as any)(index, files);
-      return;
-    } catch {}
-
-    const item = items[index];
-    if (!item) return;
-    const id = String((item as any).id ?? index);
-
-    try {
-      await (handleItemPhotosChange as any)(id, files);
-    } catch (e2) {
-      console.warn("safeOnItemPhotosChange falló", e2);
-    }
-  };
-
-  const safeOnRemoveItemPhoto = (index: number, photoId: string) => {
-    try {
-      (removeItemPhoto as any)(index, photoId);
-      return;
-    } catch {}
-
-    const item = items[index];
-    if (!item) return;
-    const id = String((item as any).id ?? index);
-
-    try {
-      (removeItemPhoto as any)(id, photoId);
-    } catch (e2) {
-      console.warn("safeOnRemoveItemPhoto falló", e2);
-    }
-  };
+  const {
+    handleSaveCatalogRecord,
+    handleSaveProperty,
+    addProductFromCatalogAndMaybeActivate,
+  } = useInvoiceCatalogActions({
+    productsCatalog,
+    propertiesCatalog,
+    createCatalogProduct,
+    updateCatalogProduct,
+    createCatalogService,
+    updateCatalogService,
+    createCatalogProperty,
+    addProductFromCatalog,
+    addItem,
+    setActivePropertyId,
+    setShowNewPropertyForm,
+    setSelectedCatalogPropertyId,
+    partyKey,
+    currentTx,
+    partyHasOwnerOrContractor,
+    catalogEditor,
+  });
 
   const onAnnexesChangeForActive = useCallback(
     (docs: AnnexDocItem[]) => {
@@ -619,86 +545,7 @@ export default function useInvoiceFormViewModel(
     [annexActiveId]
   );
 
-  const addAttachmentFromCatalogStable = useCallback(
-    async (_anexoId: string) => undefined,
-    []
-  );
-
-  const removeCatalogAttachmentStable = useCallback(
-    async (_anexoId: string) => undefined,
-    []
-  );
-
-  const addProductFromCatalogAndMaybeActivate = async (catalogId: string) => {
-    try {
-      await (addProductFromCatalog as any)(catalogId);
-
-      const combinedCatalog = [
-        ...(productsCatalog || []),
-        ...(propertiesCatalog || []),
-      ];
-      const prod = combinedCatalog.find(
-        (p: any) =>
-          String(p.id) === String(catalogId) ||
-          String(p.masterId ?? p.id) === String(catalogId)
-      );
-
-      const isProp = String((prod?.kind ?? "")).toUpperCase() === "PROPERTY";
-      if (isProp) setActivePropertyId(String(catalogId));
-      return;
-    } catch (e) {
-      console.warn(
-        "addProductFromCatalogAndMaybeActivate: addProductFromCatalog falló",
-        e
-      );
-    }
-
-    const combinedCatalog = [
-      ...(productsCatalog || []),
-      ...(propertiesCatalog || []),
-    ];
-    const prod = combinedCatalog.find(
-      (p: any) =>
-        String(p.id) === String(catalogId) ||
-        String(p.masterId ?? p.id) === String(catalogId)
-    );
-
-    const name = prod?.name ?? `Producto ${catalogId}`;
-    const price = toNumber(
-      prod?.price ?? prod?.unitPrice ?? prod?.rate ?? prod?.tarifa ?? 0
-    );
-
-    const itemFallback: any = {
-      id: `prop-${Date.now()}`,
-      kind:
-        String((prod?.kind ?? "")).toUpperCase() === "PROPERTY"
-          ? "PROPERTY"
-          : "PRODUCTO",
-      name,
-      quantity: 1,
-      unitPrice: price,
-      price,
-      rate: price,
-      tarifa: price,
-      total: price,
-      meta: { propertyId: String(catalogId) },
-    };
-
-    addItem(itemFallback);
-
-    if (String(itemFallback.kind ?? "").toUpperCase() === "PROPERTY") {
-      setActivePropertyId(
-        String(itemFallback.meta?.propertyId ?? itemFallback.id)
-      );
-    }
-  };
-
-  const itemsSubtotal = useMemo(() => {
-    return items.reduce((sum: number, it: any) => {
-      const n = getLineTotalValue(it);
-      return sum + (Number.isFinite(n) ? n : 0);
-    }, 0);
-  }, [items]);
+  const itemsSubtotal = useMemo(() => buildItemsSubtotal(items), [items]);
 
   useEffect(() => {
     if (!amountOverride) {
@@ -708,225 +555,53 @@ export default function useInvoiceFormViewModel(
 
   const baseAmount = itemsSubtotal;
 
-  const facturaIvaAmount = useMemo(() => {
-    return baseAmount * (Number(ivaPercent || 0) / 100);
-  }, [baseAmount, ivaPercent]);
-
-  const ivaRetenidoAmount = useMemo(() => {
-    return baseAmount * (Number(ivaRetenidoPercent || 0) / 100);
-  }, [baseAmount, ivaRetenidoPercent]);
-
-  const islrAmount = useMemo(() => {
-    return baseAmount * (Number(islrPercent || 0) / 100);
-  }, [baseAmount, islrPercent]);
-
-  const facturaTotalFinal = useMemo(() => {
-    return Math.max(
-      0,
-      baseAmount + facturaIvaAmount - ivaRetenidoAmount - islrAmount
-    );
-  }, [baseAmount, facturaIvaAmount, ivaRetenidoAmount, islrAmount]);
-
-  const conversionInfo = useMemo(() => {
-    const sameCurrency = documentCurrency === targetCurrency;
-    const rate = Number(exchangeRate || 0);
-
-    const effectiveRate =
-      conversionEnabled && !sameCurrency ? (rate > 0 ? rate : 0) : 0;
-
-    const transformedAmount =
-      conversionEnabled && !sameCurrency && effectiveRate > 0
-        ? baseAmount * effectiveRate
-        : 0;
-
-    const transformedTotal =
-      conversionEnabled && !sameCurrency && effectiveRate > 0
-        ? facturaTotalFinal * effectiveRate
-        : 0;
-
-    const conversionType =
-      !conversionEnabled || sameCurrency
-        ? "Sin conversión"
-        : `${documentCurrency === "USD" ? "Dólares (USD)" : "Bolívares (VES)"} → ${
-            targetCurrency === "USD" ? "Dólares (USD)" : "Bolívares (VES)"
-          }`;
-
-    return {
-      rate,
-      effectiveRate,
-      transformedAmount,
-      transformedTotal,
-      conversionType,
-    };
-  }, [
-    baseAmount,
+  const {
+    facturaIvaAmount,
+    ivaRetenidoAmount,
+    islrAmount,
     facturaTotalFinal,
-    documentCurrency,
-    targetCurrency,
-    exchangeRate,
-    conversionEnabled,
-  ]);
+  } = useMemo(
+    () =>
+      buildInvoiceTotals({
+        baseAmount,
+        ivaPercent,
+        ivaRetenidoPercent,
+        islrPercent,
+      }),
+    [baseAmount, ivaPercent, ivaRetenidoPercent, islrPercent]
+  );
 
-  const handleSaveCatalogRecord = async ({
-    kind,
-    mode,
-    rec,
-  }: {
-    kind: "product" | "service";
-    mode: "create" | "edit";
-    rec: any;
-  }) => {
-    const withTx = normalizeCatalogRecordForSave({
-      rec,
-      editorRec: catalogEditor?.rec,
-      currentTx,
-      partyKey,
-      partyHasOwnerOrContractor,
-    });
+  const conversionInfo = useMemo(
+    () =>
+      buildConversionInfo({
+        documentCurrency,
+        targetCurrency,
+        exchangeRate,
+        conversionEnabled,
+        baseAmount,
+        facturaTotalFinal,
+      }),
+    [
+      documentCurrency,
+      targetCurrency,
+      exchangeRate,
+      conversionEnabled,
+      baseAmount,
+      facturaTotalFinal,
+    ]
+  );
 
-    const shouldGoToCondo =
-      Boolean(partyHasOwnerOrContractor) || hasExplicitCondoTrueFlag(withTx);
-
-    const finalRec = shouldGoToCondo
-      ? withTx
-      : forceGeneralCatalogRecord(withTx);
-
-    if (mode === "edit" && catalogEditor?.rec?.id) {
-      if (kind === "product") {
-        await updateCatalogProduct(catalogEditor.rec.id, finalRec);
-      } else {
-        await updateCatalogService(catalogEditor.rec.id, finalRec);
-      }
-      return;
-    }
-
-    if (kind === "product") {
-      await createCatalogProduct(finalRec);
-    } else {
-      await createCatalogService(finalRec);
-    }
-  };
-
-  const getPartyDisplayName = (record: unknown): string => {
-    const r = record as {
-      name?: unknown;
-      businessName?: unknown;
-      fullName?: unknown;
-      displayName?: unknown;
-      razonSocial?: unknown;
-      companyName?: unknown;
-    };
-
+  const getPartyDisplayName = useCallback((record: unknown) => {
     return String(
-      r?.name ??
-        r?.businessName ??
-        r?.fullName ??
-        r?.displayName ??
-        r?.razonSocial ??
-        r?.companyName ??
+      (record as any)?.name ??
+        (record as any)?.businessName ??
+        (record as any)?.fullName ??
+        (record as any)?.displayName ??
+        (record as any)?.razonSocial ??
+        (record as any)?.companyName ??
         ""
     );
-  };
-
-  const handleSaveProperty = async (prop: any) => {
-    try {
-      const baseMeta = {
-        ...(prop.meta || {}),
-        transactionType: currentTx,
-        companyId: partyKey,
-        domain: "condo",
-        isPropietario: true,
-        propietario: true,
-      } as any;
-
-      if (Array.isArray(prop.checklist) && prop.checklist.length > 0) {
-        baseMeta.checklist = prop.checklist;
-      }
-
-      const createRec: any = {
-        ...prop,
-        companyId: prop.companyId ?? partyKey,
-        kind: "PROPERTY",
-        domain: "condo",
-        isPropietario: true,
-        propietario: true,
-        meta: baseMeta,
-      };
-
-      let created: any = undefined;
-      try {
-        created = await createCatalogProperty(createRec);
-      } catch (errCreate) {
-        console.warn(
-          "createCatalogProperty falló o no está disponible:",
-          errCreate
-        );
-      }
-
-      const idToAdd = created?.id ?? prop?.id;
-      if (idToAdd) {
-        try {
-          await addProductFromCatalogAndMaybeActivate(String(idToAdd));
-        } catch (errAdd) {
-          console.warn("addProductFromCatalog falló:", errAdd);
-          const fallbackPrice = toNumber(
-            prop.price ?? prop.unitPrice ?? prop.rate ?? prop.tarifa ?? 0
-          );
-          const itemFallback: any = {
-            id: `prop-${Date.now()}`,
-            kind: "PROPERTY",
-            name: prop.name || prop.title || "Inmueble",
-            quantity: 1,
-            unitPrice: fallbackPrice,
-            price: fallbackPrice,
-            rate: fallbackPrice,
-            tarifa: fallbackPrice,
-            total: fallbackPrice,
-            meta: {
-              propertyId: idToAdd,
-              companyId: partyKey,
-              domain: "condo",
-            },
-          };
-          addItem(itemFallback as any);
-          setActivePropertyId(String(itemFallback.id));
-        }
-      } else {
-        const fallbackPrice = toNumber(
-          prop.price ?? prop.unitPrice ?? prop.rate ?? prop.tarifa ?? 0
-        );
-        const itemFallback: any = {
-          id: `prop-${Date.now()}`,
-          kind: "PROPERTY",
-          name: prop.name || prop.title || "Inmueble",
-          quantity: 1,
-          unitPrice: fallbackPrice,
-          price: fallbackPrice,
-          rate: fallbackPrice,
-          tarifa: fallbackPrice,
-          total: fallbackPrice,
-          meta: {
-            propertyId: null,
-            companyId: partyKey,
-            domain: "condo",
-          },
-        };
-        addItem(itemFallback as any);
-        setActivePropertyId(String(itemFallback.id));
-      }
-
-      setShowNewPropertyForm(false);
-      setSelectedCatalogPropertyId("");
-      try {
-        alert("Inmueble guardado y agregado a la factura.");
-      } catch {}
-    } catch (e) {
-      console.error("Error guardando inmueble:", e);
-      try {
-        alert("Ocurrió un error guardando el inmueble.");
-      } catch {}
-    }
-  };
+  }, []);
 
   const handleSubmit = async (evt?: { preventDefault?: () => void }) => {
     evt?.preventDefault?.();
@@ -939,25 +614,18 @@ export default function useInvoiceFormViewModel(
 
       console.log("[handleSubmit] voucher:", currentVoucherAddress);
 
-      const customer = {
-        ...(selectedPartyRecord ?? {}),
-        ...(partyInfo ?? {}),
-        companyId:
-          partyKey ||
-          (selectedPartyRecord as any)?.companyId ||
-          (partyInfo as any)?.companyId ||
-          "",
-        name:
-          getPartyDisplayName(selectedPartyRecord) ||
-          getPartyDisplayName(partyInfo) ||
-          "",
-      };
+      const customer = buildCustomerRecord(
+        selectedPartyRecord,
+        partyInfo,
+        partyKey
+      );
 
       const payload = {
         invoice: {
           id: invoiceId || undefined,
           type: invoiceType,
           docKind,
+          facturaAnulada,
           invoiceName,
           date: documentDateTime,
           amount: baseAmount,
@@ -1108,6 +776,8 @@ export default function useInvoiceFormViewModel(
     setNumeroControl,
     numeroRecibo,
     setNumeroRecibo,
+    facturaAnulada,
+    setFacturaAnulada,
     selectedCatalogProductId,
     setSelectedCatalogProductIdState,
     productsCatalog,
@@ -1166,8 +836,8 @@ export default function useInvoiceFormViewModel(
     safeOnItemPhotosChange,
     safeOnRemoveItemPhoto,
     onAnnexesChangeForActive,
-    addAttachmentFromCatalogStable,
-    removeCatalogAttachmentStable,
+    addAttachmentFromCatalogStable: addProductFromCatalogAndMaybeActivate,
+    removeCatalogAttachmentStable: async (_anexoId: string) => undefined,
     addProductFromCatalogAndMaybeActivate,
     itemsSubtotal,
     baseAmount,
@@ -1179,5 +849,6 @@ export default function useInvoiceFormViewModel(
     handleSaveCatalogRecord,
     handleSaveProperty,
     handleInvoiceTypeChange,
+    getPartyDisplayName,
   };
 }

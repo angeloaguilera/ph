@@ -2,14 +2,15 @@ import type React from "react";
 
 export type PreviewKind = "image" | "pdf" | "excel" | "none";
 
-// ✅ Cambiado: ahora SetValue soporta setState normal y setState con callback (prev => next)
+// Permite setState normal y setState con callback
 export type SetValue<T> = React.Dispatch<React.SetStateAction<T>>;
 
-// ✅ Tipos exactos para evitar strings sueltos
+// Tipos exactos
 export type Destination = "BANCO" | "CAJA";
 export type DocKind = "FACTURA" | "RECIBO" | "NOMINA";
 export type InvoiceType = "VENTA" | "COMPRA";
 export type PaymentType = "" | "DEBITO" | "TRANSFERENCIA" | "CREDITO" | "PAGOMOVIL";
+export type FacturaAnulada = "NO_ANULADA" | "ANULADA";
 
 export type InvoiceDocumentHeaderSectionProps = {
   docKind: DocKind;
@@ -32,6 +33,9 @@ export type InvoiceDocumentHeaderSectionProps = {
 
   numeroControl: string;
   setNumeroControl: SetValue<string>;
+
+  facturaAnulada: FacturaAnulada;
+  setFacturaAnulada: SetValue<FacturaAnulada>;
 
   destination: Destination;
   setDestination: SetValue<Destination>;

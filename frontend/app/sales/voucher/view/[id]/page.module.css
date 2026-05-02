@@ -18,7 +18,7 @@
 
 .card {
   background: rgba(255, 255, 255, 0.06);
-  border: 1px solid rgba(255, 255, 255, 0.10);
+  border: 1px solid rgba(255, 255, 255, 0.1);
   border-radius: 14px;
   padding: 16px;
   backdrop-filter: blur(10px);
@@ -34,7 +34,6 @@
   opacity: 0.9;
 }
 
-/* Topbar */
 .topbar {
   display: flex;
   gap: 12px;
@@ -43,7 +42,7 @@
   padding: 14px;
   border-radius: 14px;
   background: rgba(255, 255, 255, 0.06);
-  border: 1px solid rgba(255, 255, 255, 0.10);
+  border: 1px solid rgba(255, 255, 255, 0.1);
 }
 
 .topbarLeft {
@@ -97,7 +96,6 @@
   background: rgba(120, 170, 255, 0.24);
 }
 
-/* Paper area */
 .paperWrap {
   display: flex;
   justify-content: center;
@@ -113,7 +111,6 @@
   padding: 22px;
 }
 
-/* Header inside paper */
 .paperHeader {
   display: flex;
   justify-content: space-between;
@@ -174,6 +171,7 @@
   gap: 8px;
   font-size: 12px;
   margin: 2px 0;
+  align-items: center;
 }
 
 .docLabel {
@@ -185,7 +183,6 @@
   font-weight: 700;
 }
 
-/* Invoice name */
 .invoiceName {
   margin-top: 12px;
   font-size: 14px;
@@ -197,7 +194,6 @@
   border-radius: 12px;
 }
 
-/* Blocks */
 .blocks {
   margin-top: 14px;
   display: grid;
@@ -223,6 +219,7 @@
   gap: 10px;
   font-size: 12px;
   padding: 3px 0;
+  align-items: start;
 }
 
 .k {
@@ -235,7 +232,6 @@
   word-break: break-word;
 }
 
-/* Table */
 .table {
   margin-top: 14px;
   border: 1px solid #e6eaf2;
@@ -245,12 +241,17 @@
 
 .thead {
   display: grid;
-  grid-template-columns: 1fr 90px 140px 140px;
+  grid-template-columns: 1fr 90px 140px 140px 110px;
   background: #101828;
   color: #ffffff;
   padding: 10px 12px;
   font-size: 12px;
   font-weight: 800;
+  gap: 10px;
+}
+
+.th {
+  text-align: left;
 }
 
 .thCenter {
@@ -263,10 +264,11 @@
 
 .trow {
   display: grid;
-  grid-template-columns: 1fr 90px 140px 140px;
+  grid-template-columns: 1fr 90px 140px 140px 110px;
   padding: 10px 12px;
   border-top: 1px solid #eef2f7;
   align-items: center;
+  gap: 10px;
 }
 
 .td {
@@ -296,7 +298,6 @@
   color: #667085;
 }
 
-/* Totals */
 .totals {
   margin-top: 14px;
   display: flex;
@@ -349,7 +350,6 @@
   font-size: 16px;
 }
 
-/* Footer */
 .footer {
   margin-top: 14px;
   padding-top: 12px;
@@ -375,24 +375,49 @@
   opacity: 0.85;
 }
 
-/* Responsive */
 @media (max-width: 860px) {
   .paperHeader {
     flex-direction: column;
     align-items: flex-start;
   }
+
   .docBlock {
     text-align: left;
     min-width: unset;
   }
+
   .docRow {
     justify-content: flex-start;
   }
+
   .blocks {
     grid-template-columns: 1fr;
   }
+
   .thead,
   .trow {
-    grid-template-columns: 1fr 70px 110px 110px;
+    grid-template-columns: 1fr 70px 110px 110px 96px;
+  }
+}
+
+@media (max-width: 640px) {
+  .page {
+    padding: 18px 10px;
+  }
+
+  .paper {
+    padding: 16px;
+    border-radius: 12px;
+  }
+
+  .thead,
+  .trow {
+    grid-template-columns: 1fr 56px 88px 88px 88px;
+    gap: 8px;
+    padding: 10px;
+  }
+
+  .blockLine {
+    grid-template-columns: 84px 1fr;
   }
 }

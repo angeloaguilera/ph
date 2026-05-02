@@ -46,6 +46,30 @@ function makeEmptyPartyDraft() {
   } as any;
 }
 
+function toDatetimeLocal(value?: string) {
+  if (!value) return "";
+  const d = new Date(value);
+  if (Number.isNaN(d.getTime())) return "";
+
+  const pad = (n: number) => String(n).padStart(2, "0");
+
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(
+    d.getHours()
+  )}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
+}
+
+function normalizeText(value: unknown) {
+  return String(value ?? "")
+    .trim()
+    .toLowerCase()
+    .replace(/\s+/g, " ");
+}
+
+function asNumber(value: unknown, fallback = 0) {
+  const n = Number(value);
+  return Number.isFinite(n) ? n : fallback;
+}
+
 export default function InvoiceForm({
   onSave,
   onGenerateReports,
@@ -53,7 +77,12 @@ export default function InvoiceForm({
   initialData,
   initialValues,
 }: Props) {
-  const vm = useInvoiceFormViewModel(initialData ?? initialValues, undefined);
+  const formSource = React.useMemo(
+    () => initialData ?? initialValues ?? undefined,
+    [initialData, initialValues]
+  );
+
+  const vm = useInvoiceFormViewModel(formSource, undefined);
 
   const {
     voucherAddress,
@@ -72,6 +101,8 @@ export default function InvoiceForm({
     setNumeroFactura,
     numeroControl,
     setNumeroControl,
+    facturaAnulada,
+    setFacturaAnulada,
     destination,
     setDestination,
     bank,
@@ -199,16 +230,180 @@ export default function InvoiceForm({
     handleSubmit,
   } = vm;
 
-  const recordId = String(initialData?.id ?? initialValues?.id ?? "").trim();
+  const recordId = String(formSource?.id ?? "").trim();
   const isEditMode = Boolean(recordId);
   const submitUrl = isEditMode
     ? `/api/invoices/${encodeURIComponent(recordId)}`
     : "/api/invoices";
   const submitMethod = isEditMode ? "PUT" : "POST";
 
+  const hydratedForIdRef = React.useRef<string>("");
+
+  const isFacturaAnulada = facturaAnulada === "ANULADA";
+
   React.useEffect(() => {
     console.log("[InvoiceForm] effectiveVoucherUrl:", voucherAddress);
   }, [voucherAddress]);
+
+  React.useEffect(() => {
+    const sourceId = String(formSource?.id ?? "").trim();
+    if (!sourceId) return;
+    if (hydratedForIdRef.current === sourceId) return;
+
+    hydratedForIdRef.current = sourceId;
+
+    const invoice = formSource ?? {};
+
+    setDocKind((invoice.docKind ?? "FACTURA") as any);
+
+    try {
+      handleInvoiceTypeChange(invoice.type ?? "VENTA");
+    } catch {
+      setIvaPercent(asNumber(invoice.ivaPercent, 16) as any);
+    }
+
+    setInvoiceName(invoice.invoiceName ?? "");
+    setDocumentDateTime(toDatetimeLocal(invoice.date));
+    setNumeroRecibo(invoice.numeroRecibo ?? "");
+    setNumeroFactura(invoice.numeroFactura ?? "");
+    setNumeroControl(invoice.numeroControl ?? "");
+    setFacturaAnulada((invoice.facturaAnulada ?? "NO_ANULADA") as any);
+    setDestination(invoice.destination ?? invoice.bank ?? "Banco");
+    setBank(invoice.bank ?? "");
+    setCaja(invoice.caja ?? "");
+    setPaymentType(invoice.payment?.method ?? "");
+    setReferenceNumber(invoice.payment?.reference ?? "");
+
+    const voucher =
+      invoice.effectiveVoucherUrl ??
+      invoice.voucherUrl ??
+      invoice.voucherAddress ??
+      "";
+    setVoucherAddress(voucher);
+    onVoucherUrlChange?.(voucher);
+
+    setDocumentCurrency(invoice.documentCurrency ?? "VES");
+    setTargetCurrency(invoice.targetCurrency ?? "VES");
+    setConversionEnabled(Boolean(invoice.conversionEnabled ?? false));
+    setUseAutoRate(Boolean(invoice.useAutoRate ?? false));
+
+    setManualExchangeRate(
+      asNumber(invoice.manualExchangeRate ?? invoice.exchangeRate ?? 0) as any
+    );
+
+    setIvaPercent(asNumber(invoice.ivaPercent, 16) as any);
+    setIvaRetenidoPercent(asNumber(invoice.ivaRetenidoPercent, 0) as any);
+    setIslrPercent(asNumber(invoice.islrPercent, 0) as any);
+
+    setDescription(invoice.description ?? "");
+
+    setSelectedPartyId("");
+    setSelectedCatalogProductId("");
+    setSelectedCatalogServiceId("");
+    setSelectedCatalogPropertyId("");
+    setShowNewPropertyForm(false);
+    setActivePropertyId("");
+    setPropertyAnnexesState({});
+
+    setShowNewPartyForm(false);
+    setEditingPartyId(undefined);
+    setPartyPhotoPreview(undefined);
+    setEditingEmployeeId("");
+    setReceiptEmployeeFormIndex(null as any);
+    setShowNewEmployeeForm(false);
+  }, [
+    formSource,
+    setDocKind,
+    handleInvoiceTypeChange,
+    setInvoiceName,
+    setDocumentDateTime,
+    setNumeroRecibo,
+    setNumeroFactura,
+    setNumeroControl,
+    setFacturaAnulada,
+    setDestination,
+    setBank,
+    setCaja,
+    setPaymentType,
+    setReferenceNumber,
+    setVoucherAddress,
+    onVoucherUrlChange,
+    setDocumentCurrency,
+    setTargetCurrency,
+    setConversionEnabled,
+    setUseAutoRate,
+    setManualExchangeRate,
+    setIvaPercent,
+    setIvaRetenidoPercent,
+    setIslrPercent,
+    setDescription,
+    setSelectedPartyId,
+    setSelectedCatalogProductId,
+    setSelectedCatalogServiceId,
+    setSelectedCatalogPropertyId,
+    setShowNewPropertyForm,
+    setActivePropertyId,
+    setPropertyAnnexesState,
+    setShowNewPartyForm,
+    setEditingPartyId,
+    setPartyPhotoPreview,
+    setEditingEmployeeId,
+    setReceiptEmployeeFormIndex,
+    setShowNewEmployeeForm,
+  ]);
+
+  React.useEffect(() => {
+    const invoice = formSource ?? {};
+    const customer = invoice.customer ?? invoice.party ?? invoice.client ?? null;
+
+    if (!customer) return;
+    if (!Array.isArray(parties) || parties.length === 0) return;
+
+    const customerId = String(customer.id ?? "").trim();
+    const customerRif = normalizeText(customer.rif);
+    const customerName = normalizeText(customer.name ?? customer.companyName ?? "");
+
+    const found = parties.find((p: any) => {
+      const partyId = String(p?.id ?? "").trim();
+      const partyRif = normalizeText(p?.rif);
+      const partyName = normalizeText(p?.name ?? p?.companyName ?? "");
+
+      return (
+        (customerId && partyId && partyId === customerId) ||
+        (customerRif && partyRif && partyRif === customerRif) ||
+        (customerName && partyName && partyName === customerName)
+      );
+    });
+
+    if (found?.id) {
+      if (selectedPartyId !== found.id) {
+        setSelectedPartyId(found.id);
+      }
+      return;
+    }
+
+    if (!selectedPartyId) {
+      setNewPartyDraft((prev: any) => ({
+        ...(makeEmptyPartyDraft() as any),
+        ...(prev ?? {}),
+        ...customer,
+        id: customer.id ?? prev?.id,
+        role: customer.role ?? "CLIENTE",
+        partyType: customer.partyType ?? prev?.partyType ?? "JURIDICA",
+        name: customer.name ?? customer.companyName ?? prev?.name ?? "",
+        companyName: customer.companyName ?? customer.name ?? prev?.companyName ?? "",
+        rif: customer.rif ?? prev?.rif ?? "",
+        nit: customer.nit ?? prev?.nit ?? "",
+        phone: customer.phone ?? prev?.phone ?? "",
+        email: customer.email ?? prev?.email ?? "",
+        address: customer.address ?? prev?.address ?? "",
+        city: customer.city ?? prev?.city ?? "",
+        state: customer.state ?? prev?.state ?? "",
+        country: customer.country ?? prev?.country ?? "",
+        companyId: customer.companyId ?? prev?.companyId ?? "",
+      }));
+    }
+  }, [formSource, parties, selectedPartyId, setNewPartyDraft, setSelectedPartyId]);
 
   const handleVoucherUrlChange = React.useCallback(
     (url: string) => {
@@ -322,6 +517,8 @@ export default function InvoiceForm({
             setNumeroFactura={setNumeroFactura}
             numeroControl={numeroControl}
             setNumeroControl={setNumeroControl}
+            facturaAnulada={facturaAnulada as any}
+            setFacturaAnulada={setFacturaAnulada as any}
             destination={destination}
             setDestination={setDestination}
             bank={bank}
@@ -337,7 +534,7 @@ export default function InvoiceForm({
           />
         </section>
 
-        {docKind === "NOMINA" && (
+        {!isFacturaAnulada && docKind === "NOMINA" && (
           <section className={styles.section}>
             <PayrollSection
               payrollReceipts={payrollReceipts}
@@ -366,7 +563,7 @@ export default function InvoiceForm({
           </section>
         )}
 
-        {docKind !== "NOMINA" && (
+        {!isFacturaAnulada && docKind !== "NOMINA" && (
           <section className={styles.section}>
             <PartyFormInline
               currentRole={computedPartyRole}
@@ -440,29 +637,31 @@ export default function InvoiceForm({
           </section>
         )}
 
-        <section className={styles.section}>
-          <InvoiceCurrencySection
-            documentCurrency={documentCurrency}
-            setDocumentCurrency={setDocumentCurrency as any}
-            targetCurrency={targetCurrency}
-            setTargetCurrency={setTargetCurrency as any}
-            conversionEnabled={conversionEnabled}
-            setConversionEnabled={setConversionEnabled as any}
-            useAutoRate={useAutoRate}
-            setUseAutoRate={setUseAutoRate as any}
-            manualExchangeRate={manualExchangeRate}
-            setManualExchangeRate={setManualExchangeRate as any}
-            autoExchangeRate={autoExchangeRate}
-            autoRateLoading={autoRateLoading}
-            autoRateError={autoRateError}
-            lastUpdatedAt={lastUpdatedAt}
-            conversionInfo={conversionInfo}
-            baseAmount={baseAmount}
-            facturaTotalFinal={facturaTotalFinal}
-          />
-        </section>
+        {!isFacturaAnulada && (
+          <section className={styles.section}>
+            <InvoiceCurrencySection
+              documentCurrency={documentCurrency}
+              setDocumentCurrency={setDocumentCurrency as any}
+              targetCurrency={targetCurrency}
+              setTargetCurrency={setTargetCurrency as any}
+              conversionEnabled={conversionEnabled}
+              setConversionEnabled={setConversionEnabled as any}
+              useAutoRate={useAutoRate}
+              setUseAutoRate={setUseAutoRate as any}
+              manualExchangeRate={manualExchangeRate}
+              setManualExchangeRate={setManualExchangeRate as any}
+              autoExchangeRate={autoExchangeRate}
+              autoRateLoading={autoRateLoading}
+              autoRateError={autoRateError}
+              lastUpdatedAt={lastUpdatedAt}
+              conversionInfo={conversionInfo}
+              baseAmount={baseAmount}
+              facturaTotalFinal={facturaTotalFinal}
+            />
+          </section>
+        )}
 
-        {docKind !== "NOMINA" && (
+        {!isFacturaAnulada && docKind !== "NOMINA" && (
           <section className={styles.section}>
             <InvoiceCatalogSection
               catalogEnabled={catalogEnabled}
@@ -510,64 +709,70 @@ export default function InvoiceForm({
           </section>
         )}
 
-        <section className={styles.section}>
-          <InvoiceLinesSection
-            items={items}
-            safeUpdateItem={safeUpdateItem}
-            safeRemoveItem={safeRemoveItem}
-            safeOnItemPhotosChange={safeOnItemPhotosChange}
-            invoiceType={invoiceType}
-          />
-        </section>
+        {!isFacturaAnulada && docKind !== "NOMINA" && (
+          <section className={styles.section}>
+            <InvoiceLinesSection
+              items={items}
+              safeUpdateItem={safeUpdateItem}
+              safeRemoveItem={safeRemoveItem}
+              safeOnItemPhotosChange={safeOnItemPhotosChange}
+              invoiceType={invoiceType}
+            />
+          </section>
+        )}
 
-        <section className={styles.summaryBar}>
-          <div className={styles.summaryTextBlock}>
-            <div className={styles.summaryLabel}>Subtotal (líneas)</div>
-            <div className={styles.summaryValue}>
-              {itemsSubtotal.toFixed(2)}
+        {!isFacturaAnulada && docKind !== "NOMINA" && (
+          <section className={styles.summaryBar}>
+            <div className={styles.summaryTextBlock}>
+              <div className={styles.summaryLabel}>Subtotal (líneas)</div>
+              <div className={styles.summaryValue}>{itemsSubtotal.toFixed(2)}</div>
             </div>
-          </div>
-        </section>
+          </section>
+        )}
 
-        <section className={styles.section}>
-          <InvoiceTotalsSection
-            docKind={docKind as any}
-            itemsSubtotal={itemsSubtotal}
-            ivaPercent={ivaPercent}
-            setIvaPercent={setIvaPercent as any}
-            ivaRetenidoPercent={ivaRetenidoPercent}
-            setIvaRetenidoPercent={setIvaRetenidoPercent as any}
-            islrPercent={islrPercent}
-            setIslrPercent={setIslrPercent as any}
-            facturaIvaAmount={facturaIvaAmount}
-            ivaRetenidoAmount={ivaRetenidoAmount}
-            islrAmount={islrAmount}
-            facturaTotalFinal={facturaTotalFinal}
-            documentCurrency={documentCurrency}
-            targetCurrency={targetCurrency}
-            conversionInfo={conversionInfo}
-          />
-        </section>
+        {!isFacturaAnulada && docKind !== "NOMINA" && (
+          <section className={styles.section}>
+            <InvoiceTotalsSection
+              docKind={docKind as any}
+              itemsSubtotal={itemsSubtotal}
+              ivaPercent={ivaPercent}
+              setIvaPercent={setIvaPercent as any}
+              ivaRetenidoPercent={ivaRetenidoPercent}
+              setIvaRetenidoPercent={setIvaRetenidoPercent as any}
+              islrPercent={islrPercent}
+              setIslrPercent={setIslrPercent as any}
+              facturaIvaAmount={facturaIvaAmount}
+              ivaRetenidoAmount={ivaRetenidoAmount}
+              islrAmount={islrAmount}
+              facturaTotalFinal={facturaTotalFinal}
+              documentCurrency={documentCurrency}
+              targetCurrency={targetCurrency}
+              conversionInfo={conversionInfo}
+            />
+          </section>
+        )}
 
-        <section className={styles.section}>
-          <label className={styles.label} htmlFor="invoice-description">
-            Descripción
-          </label>
-          <textarea
-            id="invoice-description"
-            className={styles.textarea}
-            value={description}
-            onChange={(e) => setDescription(e.target.value)}
-            rows={4}
-          />
-        </section>
+        {!isFacturaAnulada && (
+          <section className={styles.section}>
+            <label className={styles.label} htmlFor="invoice-description">
+              Descripción
+            </label>
+            <textarea
+              id="invoice-description"
+              className={styles.textarea}
+              value={description}
+              onChange={(e) => setDescription(e.target.value)}
+              rows={4}
+            />
+          </section>
+        )}
 
         <div className={styles.actions}>
           <button type="submit" className={styles.primaryButton}>
             {isEditMode ? "Actualizar cambios" : "Guardar cambios"}
           </button>
 
-          {onGenerateReports && (
+          {!isFacturaAnulada && onGenerateReports && (
             <button
               type="button"
               onClick={onGenerateReports}

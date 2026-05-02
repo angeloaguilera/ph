@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, type MouseEvent as ReactMouseEvent } from "react";
 import { useRouter } from "next/navigation";
 import type { Invoice } from "@/types/invoice";
 import {
@@ -8,16 +8,47 @@ import {
   ContextMenuState,
   FeedbackState,
   SortKey,
-  createDerivedInvoice,
   filterInvoices,
-  formatCurrency,
   normalizeApiResponseToInvoices,
   readFromLocalStorage,
   sortInvoices,
   toCSV,
   writeToLocalStorage,
-  ensureInvoiceId,
 } from "../lib/billing-notes";
+
+function makeInvoiceId() {
+  if (typeof crypto !== "undefined" && "randomUUID" in crypto) {
+    return crypto.randomUUID();
+  }
+
+  return `inv-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+}
+
+function ensureInvoiceIdLocal(invoice: Invoice): Invoice {
+  const currentId = typeof invoice.id === "string" ? invoice.id.trim() : "";
+  return {
+    ...invoice,
+    id: currentId || makeInvoiceId(),
+  };
+}
+
+function createDerivedInvoice(
+  inv: Invoice,
+  mode: "clone" | "debit" | "credit"
+): Invoice {
+  const prefix =
+    mode === "clone"
+      ? "Copia de "
+      : mode === "debit"
+      ? "Nota débito de "
+      : "Nota crédito de ";
+
+  return {
+    ...inv,
+    id: "",
+    invoiceName: `${prefix}${inv.invoiceName || "Sin nombre"}`,
+  };
+}
 
 export function useBillingNotes() {
   const router = useRouter();
@@ -32,6 +63,16 @@ export function useBillingNotes() {
   const [feedback, setFeedback] = useState<FeedbackState | null>(null);
   const [showNewModal, setShowNewModal] = useState(false);
   const [contextMenu, setContextMenu] = useState<ContextMenuState>(null);
+
+  const [selectedIds, setSelectedIds] = useState<string[]>([]);
+  const [selectionAnchorIndex, setSelectionAnchorIndex] = useState<number | null>(null);
+
+  const [showCloneConfirm, setShowCloneConfirm] = useState(false);
+  const [cloneTarget, setCloneTarget] = useState<Invoice | null>(null);
+
+  const [modalMode, setModalMode] = useState<
+    "new" | "edit" | "clone" | "debit" | "credit"
+  >("new");
 
   useEffect(() => {
     let cancelled = false;
@@ -138,6 +179,9 @@ export function useBillingNotes() {
         setShowNewModal(false);
         setEditingInvoice(null);
         setContextMenu(null);
+        setShowCloneConfirm(false);
+        setCloneTarget(null);
+        setModalMode("new");
       }
     };
 
@@ -161,12 +205,18 @@ export function useBillingNotes() {
     writeToLocalStorage(next);
   };
 
+  const clearSelection = () => {
+    setSelectedIds([]);
+    setSelectionAnchorIndex(null);
+    setSelected(null);
+  };
+
   const handleSave = (invoiceOrWrapper: any) => {
     try {
       const invoice = invoiceOrWrapper?.invoice ?? invoiceOrWrapper;
       if (!invoice) throw new Error("Invoice vacío en handleSave");
 
-      const invoiceWithId = ensureInvoiceId(invoice);
+      const invoiceWithId = ensureInvoiceIdLocal(invoice);
 
       setInvoices((prev) => {
         const next = [
@@ -178,8 +228,12 @@ export function useBillingNotes() {
       });
 
       setSelected(invoiceWithId);
+      setSelectedIds([invoiceWithId.id]);
+      setSelectionAnchorIndex(null);
+
       setEditingInvoice(null);
       setShowNewModal(false);
+      setModalMode("new");
       setFeedback({
         type: "success",
         message: "Registro guardado correctamente.",
@@ -196,13 +250,39 @@ export function useBillingNotes() {
     const next = invoices.filter((i) => i.id !== id);
     persist(next);
 
+    setSelectedIds((prev) => prev.filter((x) => x !== id));
     if (selected?.id === id) setSelected(null);
+
     if (editingInvoice?.id === id) {
       setEditingInvoice(null);
       setShowNewModal(false);
+      setModalMode("new");
     }
 
     setFeedback({ type: "info", message: "Registro eliminado." });
+  };
+
+  const handleBulkDelete = () => {
+    if (selectedIds.length === 0) return;
+
+    const count = selectedIds.length;
+
+    if (
+      !window.confirm(
+        `¿Eliminar ${count} comprobante(s) seleccionados? Esta acción no se puede deshacer.`
+      )
+    ) {
+      return;
+    }
+
+    const next = invoices.filter((inv) => !selectedIds.includes(inv.id));
+    persist(next);
+    clearSelection();
+
+    setFeedback({
+      type: "info",
+      message: `${count} comprobante(s) eliminado(s).`,
+    });
   };
 
   const handleClearAll = () => {
@@ -215,9 +295,10 @@ export function useBillingNotes() {
     }
 
     persist([]);
-    setSelected(null);
+    clearSelection();
     setEditingInvoice(null);
     setShowNewModal(false);
+    setModalMode("new");
     setFeedback({
       type: "info",
       message: "Todos los registros fueron eliminados.",
@@ -227,20 +308,39 @@ export function useBillingNotes() {
   const openNewModal = () => {
     setEditingInvoice(null);
     setShowNewModal(true);
+    setModalMode("new");
     setSelected(null);
     setContextMenu(null);
   };
 
   const handleEdit = (inv: Invoice) => {
-    setEditingInvoice(ensureInvoiceId(inv));
+    setEditingInvoice({ ...inv });
     setShowNewModal(true);
+    setModalMode("edit");
     setSelected(null);
     setContextMenu(null);
   };
 
-  const handleClone = (inv: Invoice) => {
-    setEditingInvoice(createDerivedInvoice(inv, "clone"));
+  const requestClone = (inv: Invoice) => {
+    setCloneTarget(inv);
+    setShowCloneConfirm(true);
+    setSelected(null);
+    setContextMenu(null);
+  };
+
+  const cancelClone = () => {
+    setShowCloneConfirm(false);
+    setCloneTarget(null);
+  };
+
+  const confirmClone = () => {
+    if (!cloneTarget) return;
+
+    setEditingInvoice(createDerivedInvoice(cloneTarget, "clone"));
+    setModalMode("clone");
     setShowNewModal(true);
+    setShowCloneConfirm(false);
+    setCloneTarget(null);
     setSelected(null);
     setContextMenu(null);
     setFeedback({
@@ -252,6 +352,7 @@ export function useBillingNotes() {
   const handleDebitNote = (inv: Invoice) => {
     setEditingInvoice(createDerivedInvoice(inv, "debit"));
     setShowNewModal(true);
+    setModalMode("debit");
     setSelected(null);
     setContextMenu(null);
     setFeedback({
@@ -263,6 +364,7 @@ export function useBillingNotes() {
   const handleCreditNote = (inv: Invoice) => {
     setEditingInvoice(createDerivedInvoice(inv, "credit"));
     setShowNewModal(true);
+    setModalMode("credit");
     setSelected(null);
     setContextMenu(null);
     setFeedback({
@@ -274,6 +376,7 @@ export function useBillingNotes() {
   const closeNewModal = () => {
     setShowNewModal(false);
     setEditingInvoice(null);
+    setModalMode("new");
   };
 
   const downloadInvoice = (inv: Invoice) => {
@@ -364,6 +467,7 @@ export function useBillingNotes() {
 
   const totalCount = invoices.length;
   const filteredCount = filtered.length;
+  const selectedCount = selectedIds.length;
 
   const sortLabel = {
     date: "Fecha",
@@ -386,7 +490,7 @@ export function useBillingNotes() {
 
   const goToView = (id: string) => router.push(`/sales/voucher/view/${id}`);
 
-  const openContextMenu = (e: React.MouseEvent, inv: Invoice) => {
+  const openContextMenu = (e: ReactMouseEvent, inv: Invoice) => {
     e.preventDefault();
     e.stopPropagation();
 
@@ -399,6 +503,88 @@ export function useBillingNotes() {
     setContextMenu({ x: Math.max(8, x), y: Math.max(8, y), invoice: inv });
   };
 
+  const toggleInvoiceId = (id: string) => {
+    setSelectedIds((prev) =>
+      prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]
+    );
+  };
+
+  const selectRange = (startIndex: number, endIndex: number) => {
+    const start = Math.min(startIndex, endIndex);
+    const end = Math.max(startIndex, endIndex);
+    const rangeIds = filtered.slice(start, end + 1).map((inv) => inv.id);
+    setSelectedIds(rangeIds);
+  };
+
+  const handleRowClick = (
+    inv: Invoice,
+    index: number,
+    e: ReactMouseEvent<HTMLTableRowElement>
+  ) => {
+    setContextMenu(null);
+
+    if (e.shiftKey && selectionAnchorIndex !== null) {
+      selectRange(selectionAnchorIndex, index);
+      setSelected(null);
+      return;
+    }
+
+    if (e.metaKey || e.ctrlKey) {
+      toggleInvoiceId(inv.id);
+      setSelectionAnchorIndex(index);
+      setSelected(null);
+      return;
+    }
+
+    setSelectedIds([inv.id]);
+    setSelectionAnchorIndex(index);
+    setSelected(inv);
+  };
+
+  const handleRowCheckboxClick = (
+    inv: Invoice,
+    index: number,
+    e: ReactMouseEvent<HTMLButtonElement>
+  ) => {
+    e.stopPropagation();
+    setContextMenu(null);
+
+    if (e.shiftKey && selectionAnchorIndex !== null) {
+      selectRange(selectionAnchorIndex, index);
+      setSelected(null);
+      return;
+    }
+
+    toggleInvoiceId(inv.id);
+    setSelectionAnchorIndex(index);
+    setSelected(null);
+  };
+
+  const handleBulkClone = () => {
+    if (selectedIds.length === 0) return;
+
+    const count = selectedIds.length;
+
+    if (!window.confirm(`¿Clonar ${count} comprobante(s) seleccionados?`)) {
+      return;
+    }
+
+    const sources = invoices.filter((inv) => selectedIds.includes(inv.id));
+    const clones = sources.map((inv) =>
+      ensureInvoiceIdLocal(createDerivedInvoice(inv, "clone"))
+    );
+
+    const next = [...clones, ...invoices];
+    persist(next);
+    clearSelection();
+
+    setFeedback({
+      type: "success",
+      message: `${count} comprobante(s) clonado(s).`,
+    });
+  };
+
+
   const runContextAction = (action: ContextAction, inv: Invoice) => {
     setContextMenu(null);
 
@@ -410,7 +596,7 @@ export function useBillingNotes() {
         handleEdit(inv);
         return;
       case "clone":
-        handleClone(inv);
+        requestClone(inv);
         return;
       case "debit":
         handleDebitNote(inv);
@@ -447,6 +633,10 @@ export function useBillingNotes() {
       filteredCount,
       sortLabel,
       sortArrow,
+      selectedIds,
+      selectedCount,
+      modalMode,
+      showCloneConfirm,
     },
     actions: {
       setSelected,
@@ -457,10 +647,14 @@ export function useBillingNotes() {
       toggleSort,
       handleSave,
       handleDelete,
+      handleBulkDelete,
       handleClearAll,
       openNewModal,
       handleEdit,
-      handleClone,
+      requestClone,
+      confirmClone,
+      cancelClone,
+      handleBulkClone,
       handleDebitNote,
       handleCreditNote,
       closeNewModal,
@@ -471,6 +665,9 @@ export function useBillingNotes() {
       openContextMenu,
       runContextAction,
       goToView,
+      handleRowClick,
+      handleRowCheckboxClick,
+      clearSelection,
     },
   };
 }

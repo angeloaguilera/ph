@@ -1,58 +1,583 @@
 "use client";
 
-import React, { useState } from "react";
-import InvoiceForm from "@/components/forms/InvoiceForm";
+import React, {
+  useEffect,
+  useMemo,
+  useState,
+  type MouseEvent as ReactMouseEvent,
+} from "react";
+import { useRouter } from "next/navigation";
+import type { Invoice } from "@/types/invoice";
 import styles from "./page.module.css";
-import { useBillingNotes } from "./hooks/useBillingNotes";
 import BillingTopActions from "./components/BillingTopActions";
-import { ExportInvoice, formatDate, formatMoney } from "./lib/billingExports";
+import BillingSelectionBar from "./components/BillingSelectionBar";
+import BillingInvoicesTable from "./components/BillingInvoicesTable";
+import BillingDialogs from "./components/BillingDialogs";
+import BillingContextMenu from "./components/BillingContextMenu";
+import { ExportInvoice, formatMoney } from "./lib/billingExports";
+import {
+  ContextAction,
+  ContextMenuState,
+  FeedbackState,
+  SortKey,
+  filterInvoices,
+  normalizeApiResponseToInvoices,
+  readFromLocalStorage,
+  sortInvoices,
+  writeToLocalStorage,
+} from "./lib/billing-notes";
+import {
+  createDerivedInvoice,
+  ensureInvoiceIdLocal,
+  normalizeInvoicesWithUniqueIds,
+} from "./lib/invoiceIds";
 
 const SORT_KEYS = ["date", "invoiceName", "total", "bank", "type"] as const;
 
-export default function BillingNotesPage() {
-  const { state, actions } = useBillingNotes();
+export default function Page() {
+  const router = useRouter();
 
-  const [manyVoucherOpen, setManyVoucherOpen] = useState(false);
+  const [invoices, setInvoices] = useState<Invoice[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [selected, setSelected] = useState<Invoice | null>(null);
+  const [editingInvoice, setEditingInvoice] = useState<Invoice | null>(null);
+  const [filter, setFilter] = useState("");
+  const [sortBy, setSortBy] = useState<SortKey>("date");
+  const [sortDir, setSortDir] = useState<"asc" | "desc">("desc");
+  const [feedback, setFeedback] = useState<FeedbackState | null>(null);
+  const [showNewModal, setShowNewModal] = useState(false);
+  const [contextMenu, setContextMenu] = useState<ContextMenuState>(null);
 
-  const {
-    loading,
-    selected,
-    editingInvoice,
-    filter,
-    sortBy,
-    feedback,
-    showNewModal,
-    contextMenu,
-    filtered,
-    totalSum,
-    filteredSum,
-    uniqueBanks,
-    totalCount,
-    filteredCount,
-    sortLabel,
-    sortArrow,
-  } = state;
+  const [selectedIds, setSelectedIds] = useState<string[]>([]);
+  const [selectionAnchorIndex, setSelectionAnchorIndex] = useState<number | null>(
+    null
+  );
 
-  const {
-    setSelected,
-    setFilter,
-    toggleSort,
-    handleSave,
-    handleDelete,
-    handleClearAll,
-    openNewModal,
-    handleEdit,
-    handleClone,
-    handleDebitNote,
-    handleCreditNote,
-    closeNewModal,
-    downloadInvoice,
-    openContextMenu,
-    runContextAction,
-    goToView,
-  } = actions;
+  const [showCloneConfirm, setShowCloneConfirm] = useState(false);
+  const [cloneTarget, setCloneTarget] = useState<Invoice | null>(null);
 
-  const allInvoices = state.invoices as ExportInvoice[];
+  const [modalMode, setModalMode] = useState<
+    "new" | "edit" | "clone" | "debit" | "credit"
+  >("new");
+
+  useEffect(() => {
+    let cancelled = false;
+
+    const loadInvoices = async () => {
+      setLoading(true);
+
+      try {
+        const res = await fetch("/api/invoices", {
+          method: "GET",
+          headers: { Accept: "application/json" },
+          cache: "no-store",
+        });
+
+        const rawText = await res.text();
+
+        let data: any = null;
+        try {
+          data = rawText ? JSON.parse(rawText) : null;
+        } catch {
+          data = rawText ? { message: rawText } : null;
+        }
+
+        if (!res.ok) {
+          console.error("API /api/invoices falló:", {
+            status: res.status,
+            statusText: res.statusText,
+            rawText,
+            parsedBody: data,
+          });
+
+          throw new Error(
+            `Error HTTP ${res.status}: ${
+              data?.message || rawText || res.statusText || "Error desconocido"
+            }`
+          );
+        }
+
+        const normalized = normalizeInvoicesWithUniqueIds(
+          normalizeApiResponseToInvoices(data)
+        );
+
+        if (normalized.length > 0) {
+          if (!cancelled) setInvoices(normalized);
+          writeToLocalStorage(normalized);
+          return;
+        }
+
+        const local = normalizeInvoicesWithUniqueIds(readFromLocalStorage());
+
+        if (!cancelled) {
+          if (local.length > 0) {
+            setInvoices(local);
+            setFeedback({
+              type: "info",
+              message: "La API no devolvió facturas; se cargó la copia local.",
+            });
+          } else {
+            setInvoices([]);
+            setFeedback({
+              type: "info",
+              message: "La API respondió bien, pero no hay facturas guardadas.",
+            });
+          }
+        }
+      } catch (err) {
+        console.error("Error cargando invoices desde API:", err);
+
+        const local = normalizeInvoicesWithUniqueIds(readFromLocalStorage());
+        if (!cancelled) {
+          if (local.length > 0) {
+            setInvoices(local);
+            setFeedback({
+              type: "info",
+              message: "No se pudo conectar con la API; se cargó la copia local.",
+            });
+          } else {
+            setInvoices([]);
+            setFeedback({
+              type: "error",
+              message: "No se pudieron cargar los registros.",
+            });
+          }
+        }
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    };
+
+    void loadInvoices();
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!feedback) return;
+    const t = window.setTimeout(() => setFeedback(null), 2600);
+    return () => window.clearTimeout(t);
+  }, [feedback]);
+
+  useEffect(() => {
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        setSelected(null);
+        setShowNewModal(false);
+        setEditingInvoice(null);
+        setContextMenu(null);
+        setShowCloneConfirm(false);
+        setCloneTarget(null);
+        setModalMode("new");
+      }
+    };
+
+    const closeMenu = () => setContextMenu(null);
+
+    window.addEventListener("keydown", onKeyDown);
+    window.addEventListener("scroll", closeMenu, true);
+    window.addEventListener("resize", closeMenu);
+    document.addEventListener("click", closeMenu);
+
+    return () => {
+      window.removeEventListener("keydown", onKeyDown);
+      window.removeEventListener("scroll", closeMenu, true);
+      window.removeEventListener("resize", closeMenu);
+      document.removeEventListener("click", closeMenu);
+    };
+  }, []);
+
+  const persist = (next: Invoice[]) => {
+    setInvoices(next);
+    writeToLocalStorage(next);
+  };
+
+  const clearSelection = () => {
+    setSelectedIds([]);
+    setSelectionAnchorIndex(null);
+    setSelected(null);
+  };
+
+  const handleSave = (invoiceOrWrapper: any) => {
+    try {
+      const invoice = invoiceOrWrapper?.invoice ?? invoiceOrWrapper;
+      if (!invoice) throw new Error("Invoice vacío en handleSave");
+
+      const invoiceWithId = ensureInvoiceIdLocal(invoice);
+
+      setInvoices((prev) => {
+        const next = [
+          invoiceWithId,
+          ...prev.filter((x) => x.id !== invoiceWithId.id),
+        ];
+        writeToLocalStorage(next);
+        return next;
+      });
+
+      setSelected(invoiceWithId);
+      setSelectedIds([invoiceWithId.id]);
+      setSelectionAnchorIndex(null);
+
+      setEditingInvoice(null);
+      setShowNewModal(false);
+      setModalMode("new");
+      setFeedback({
+        type: "success",
+        message: "Registro guardado correctamente.",
+      });
+    } catch (err) {
+      console.error(err);
+      setFeedback({ type: "error", message: "Error al guardar la factura." });
+    }
+  };
+
+  const handleDelete = (id: string) => {
+    if (!window.confirm("¿Eliminar esta nota?")) return;
+
+    const next = invoices.filter((i) => i.id !== id);
+    persist(next);
+
+    setSelectedIds((prev) => prev.filter((x) => x !== id));
+    if (selected?.id === id) setSelected(null);
+
+    if (editingInvoice?.id === id) {
+      setEditingInvoice(null);
+      setShowNewModal(false);
+      setModalMode("new");
+    }
+
+    setFeedback({ type: "info", message: "Registro eliminado." });
+  };
+
+  const handleBulkDelete = () => {
+    if (selectedIds.length === 0) return;
+
+    const count = selectedIds.length;
+
+    if (
+      !window.confirm(
+        `¿Eliminar ${count} registro(s) seleccionados? Esta acción no se puede deshacer.`
+      )
+    ) {
+      return;
+    }
+
+    const next = invoices.filter((i) => !selectedIds.includes(i.id));
+    persist(next);
+    clearSelection();
+
+    setFeedback({
+      type: "info",
+      message: `${count} registro(s) eliminado(s).`,
+    });
+  };
+
+  const handleClearAll = () => {
+    if (
+      !window.confirm(
+        "¿Eliminar todos los registros? Esta acción no se puede deshacer."
+      )
+    ) {
+      return;
+    }
+
+    persist([]);
+    clearSelection();
+    setEditingInvoice(null);
+    setShowNewModal(false);
+    setModalMode("new");
+    setFeedback({
+      type: "info",
+      message: "Todos los registros fueron eliminados.",
+    });
+  };
+
+  const openNewModal = () => {
+    setEditingInvoice(null);
+    setShowNewModal(true);
+    setModalMode("new");
+    setSelected(null);
+    setContextMenu(null);
+  };
+
+  const handleEdit = (inv: Invoice) => {
+    setEditingInvoice({ ...inv });
+    setShowNewModal(true);
+    setModalMode("edit");
+    setSelected(null);
+    setContextMenu(null);
+  };
+
+  const requestClone = (inv: Invoice) => {
+    setCloneTarget(inv);
+    setShowCloneConfirm(true);
+    setSelected(null);
+    setContextMenu(null);
+  };
+
+  const cancelClone = () => {
+    setShowCloneConfirm(false);
+    setCloneTarget(null);
+  };
+
+  const confirmClone = () => {
+    if (!cloneTarget) return;
+
+    setEditingInvoice(createDerivedInvoice(cloneTarget, "clone"));
+    setModalMode("clone");
+    setShowNewModal(true);
+    setShowCloneConfirm(false);
+    setCloneTarget(null);
+    setSelected(null);
+    setContextMenu(null);
+    setFeedback({
+      type: "info",
+      message: "Se creó una copia lista para editar.",
+    });
+  };
+
+  const handleDebitNote = (inv: Invoice) => {
+    setEditingInvoice(createDerivedInvoice(inv, "debit"));
+    setShowNewModal(true);
+    setModalMode("debit");
+    setSelected(null);
+    setContextMenu(null);
+    setFeedback({
+      type: "info",
+      message: "Se creó una nota débito lista para editar.",
+    });
+  };
+
+  const handleCreditNote = (inv: Invoice) => {
+    setEditingInvoice(createDerivedInvoice(inv, "credit"));
+    setShowNewModal(true);
+    setModalMode("credit");
+    setSelected(null);
+    setContextMenu(null);
+    setFeedback({
+      type: "info",
+      message: "Se creó una nota crédito lista para editar.",
+    });
+  };
+
+  const closeNewModal = () => {
+    setShowNewModal(false);
+    setEditingInvoice(null);
+    setModalMode("new");
+  };
+
+  const downloadInvoice = (inv: Invoice) => {
+    const blob = new Blob([JSON.stringify(inv, null, 2)], {
+      type: "application/json",
+    });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `invoice-${inv.id}.json`;
+    a.click();
+    URL.revokeObjectURL(url);
+    setFeedback({ type: "success", message: "JSON descargado." });
+  };
+
+  const filtered = useMemo(
+    () => sortInvoices(filterInvoices(invoices, filter), sortBy, sortDir),
+    [invoices, filter, sortBy, sortDir]
+  );
+
+  const totalSum = useMemo(
+    () => invoices.reduce((s, i) => s + Number(i.total ?? 0), 0),
+    [invoices]
+  );
+
+  const filteredSum = useMemo(
+    () => filtered.reduce((s, i) => s + Number(i.total ?? 0), 0),
+    [filtered]
+  );
+
+  const uniqueBanks = useMemo(
+    () => new Set(invoices.map((i) => i.bank?.trim()).filter(Boolean)).size,
+    [invoices]
+  );
+
+  const totalCount = invoices.length;
+  const filteredCount = filtered.length;
+  const selectedCount = selectedIds.length;
+
+  const sortLabel = {
+    date: "Fecha",
+    invoiceName: "Nombre",
+    total: "Total",
+    bank: "Banco",
+    type: "Tipo",
+  }[sortBy];
+
+  const sortArrow = sortDir === "asc" ? "↑" : "↓";
+
+  const toggleSort = (key: SortKey) => {
+    if (sortBy === key) {
+      setSortDir((s) => (s === "asc" ? "desc" : "asc"));
+    } else {
+      setSortBy(key);
+      setSortDir("asc");
+    }
+  };
+
+  const goToView = (id: string) => router.push(`/sales/voucher/view/${id}`);
+
+  const openContextMenu = (e: ReactMouseEvent, inv: Invoice) => {
+    e.preventDefault();
+    e.stopPropagation();
+
+    const menuWidth = 230;
+    const menuHeight = 290;
+
+    const x = Math.min(e.clientX, window.innerWidth - menuWidth - 8);
+    const y = Math.min(e.clientY, window.innerHeight - menuHeight - 8);
+
+    setContextMenu({ x: Math.max(8, x), y: Math.max(8, y), invoice: inv });
+  };
+
+  const toggleInvoiceId = (id: string) => {
+    setSelectedIds((prev) =>
+      prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]
+    );
+  };
+
+  const selectRange = (startIndex: number, endIndex: number) => {
+    const start = Math.min(startIndex, endIndex);
+    const end = Math.max(startIndex, endIndex);
+    const rangeIds = filtered.slice(start, end + 1).map((inv) => inv.id);
+    setSelectedIds(rangeIds);
+  };
+
+  const handleRowClick = (
+    inv: Invoice,
+    index: number,
+    e: ReactMouseEvent<HTMLTableRowElement>
+  ) => {
+    setContextMenu(null);
+
+    if (e.shiftKey && selectionAnchorIndex !== null) {
+      selectRange(selectionAnchorIndex, index);
+      setSelected(null);
+      return;
+    }
+
+    if (e.metaKey || e.ctrlKey) {
+      toggleInvoiceId(inv.id);
+      setSelectionAnchorIndex(index);
+      setSelected(null);
+      return;
+    }
+
+    setSelectedIds([inv.id]);
+    setSelectionAnchorIndex(index);
+    setSelected(inv);
+  };
+
+  const handleRowCheckboxClick = (
+    inv: Invoice,
+    index: number,
+    e: ReactMouseEvent<HTMLButtonElement>
+  ) => {
+    e.stopPropagation();
+    setContextMenu(null);
+
+    if (e.shiftKey && selectionAnchorIndex !== null) {
+      selectRange(selectionAnchorIndex, index);
+      setSelected(null);
+      return;
+    }
+
+    toggleInvoiceId(inv.id);
+    setSelectionAnchorIndex(index);
+    setSelected(null);
+  };
+
+  const handleBulkClone = () => {
+    if (selectedIds.length === 0) return;
+
+    const count = selectedIds.length;
+
+    if (!window.confirm(`¿Clonar ${count} comprobante(s) seleccionados?`)) {
+      return;
+    }
+
+    const sources = invoices.filter((inv) => selectedIds.includes(inv.id));
+    const clones = sources.map((inv) => createDerivedInvoice(inv, "clone"));
+
+    const next = [...clones, ...invoices];
+    persist(normalizeInvoicesWithUniqueIds(next));
+    clearSelection();
+
+    setFeedback({
+      type: "success",
+      message: `${count} comprobante(s) clonado(s).`,
+    });
+  };
+
+  const runContextAction = (action: ContextAction, inv: Invoice) => {
+    setContextMenu(null);
+
+    switch (action) {
+      case "view":
+        goToView(inv.id);
+        return;
+      case "edit":
+        handleEdit(inv);
+        return;
+      case "clone":
+        requestClone(inv);
+        return;
+      case "debit":
+        handleDebitNote(inv);
+        return;
+      case "credit":
+        handleCreditNote(inv);
+        return;
+      case "download":
+        downloadInvoice(inv);
+        return;
+      case "delete":
+        handleDelete(inv.id);
+        return;
+    }
+  };
+
+  const selectedSet = useMemo(() => new Set(selectedIds), [selectedIds]);
+
+  const modalCopy =
+    modalMode === "edit"
+      ? {
+          kicker: "EDITAR REGISTRO",
+          title: "Editar comprobante",
+          subtitle: "Modifica los datos y guarda los cambios.",
+        }
+      : modalMode === "clone"
+      ? {
+          kicker: "CLONAR REGISTRO",
+          title: "Clonar comprobante",
+          subtitle: "Revisa la copia y guarda el nuevo registro.",
+        }
+      : modalMode === "debit"
+      ? {
+          kicker: "NOTA DÉBITO",
+          title: "Crear nota débito",
+          subtitle: "Ajusta los datos y guarda el nuevo documento.",
+        }
+      : modalMode === "credit"
+      ? {
+          kicker: "NOTA CRÉDITO",
+          title: "Crear nota crédito",
+          subtitle: "Ajusta los datos y guarda el nuevo documento.",
+        }
+      : {
+          kicker: "NUEVO REGISTRO",
+          title: "Crear comprobante",
+          subtitle: "Completa los datos y guarda el registro.",
+        };
 
   return (
     <div className={styles.page}>
@@ -67,15 +592,16 @@ export default function BillingNotesPage() {
             <div className={styles.heroCopy}>
               <h1 className={styles.title}>Gestión de registros</h1>
               <p className={styles.subtitle}>
-                Busca, ordena, exporta y revisa tus comprobantes desde una vista más limpia.
+                Busca, ordena, exporta y revisa tus comprobantes desde una vista
+                más limpia.
               </p>
             </div>
 
             <BillingTopActions
-              allInvoices={allInvoices}
+              allInvoices={invoices as ExportInvoice[]}
               openNewModal={openNewModal}
               handleClearAll={handleClearAll}
-              onOpenManyVoucher={() => setManyVoucherOpen(true)}
+              onOpenManyVoucher={() => {}}
             />
           </div>
 
@@ -94,6 +620,13 @@ export default function BillingNotesPage() {
             </div>
           )}
 
+          <BillingSelectionBar
+            selectedCount={selectedCount}
+            onBulkClone={handleBulkClone}
+            onBulkDelete={handleBulkDelete}
+            onClearSelection={clearSelection}
+          />
+
           <div className={styles.statsGrid}>
             <div className={styles.statCard}>
               <div className={styles.statLabel}>Registros</div>
@@ -108,7 +641,7 @@ export default function BillingNotesPage() {
             <div className={styles.statCard}>
               <div className={styles.statLabel}>Total general</div>
               <div className={styles.statValue}>
-                {state.invoices.length ? formatMoney(totalSum) : "0.00"}
+                {invoices.length ? formatMoney(totalSum) : "0.00"}
               </div>
               <div className={styles.statMeta}>Suma de todos los registros</div>
             </div>
@@ -121,424 +654,52 @@ export default function BillingNotesPage() {
         </header>
 
         <main className={styles.mainGrid}>
-          <section className={styles.panel}>
-            <div className={styles.panelHeaderColumn}>
-              <div>
-                <h2 className={styles.panelTitle}>Listado</h2>
-                <p className={styles.panelText}>
-                  {loading
-                    ? "Cargando..."
-                    : `${filteredCount} resultado(s) · ordenado por ${sortLabel} ${sortArrow}`}
-                </p>
-              </div>
-
-              <div className={styles.sortChips}>
-                {SORT_KEYS.map((key) => (
-                  <button
-                    key={key}
-                    type="button"
-                    onClick={() => toggleSort(key)}
-                    className={[
-                      styles.chip,
-                      sortBy === key ? styles.chipActive : "",
-                    ].join(" ")}
-                  >
-                    {{
-                      date: "Fecha",
-                      invoiceName: "Nombre",
-                      total: "Total",
-                      bank: "Banco",
-                      type: "Tipo",
-                    }[key]}
-                    {sortBy === key ? ` ${sortArrow}` : ""}
-                  </button>
-                ))}
-              </div>
-            </div>
-
-            <div className={styles.searchRow}>
-              <div className={styles.searchWrap}>
-                <input
-                  placeholder="Buscar por nombre, fecha, banco, tipo o descripción..."
-                  value={filter}
-                  onChange={(e) => setFilter(e.target.value)}
-                  className={styles.searchInput}
-                />
-                {filter && (
-                  <button
-                    type="button"
-                    onClick={() => setFilter("")}
-                    className={styles.clearSearchButton}
-                  >
-                    Limpiar
-                  </button>
-                )}
-              </div>
-              <div className={styles.filteredTotal}>
-                Total filtrado:{" "}
-                <span>{state.invoices.length ? formatMoney(filteredSum) : "0.00"}</span>
-              </div>
-            </div>
-
-            <div className={styles.tableShell}>
-              <div className={styles.tableScroll}>
-                <table className={styles.table}>
-                  <thead className={styles.thead}>
-                    <tr>
-                      <th className={styles.thLeft}>Tipo</th>
-                      <th className={styles.thLeft}>Nombre</th>
-                      <th className={styles.thLeft}>Fecha</th>
-                      <th className={styles.thLeft}>Banco</th>
-                      <th className={styles.thRight}>Total</th>
-                    </tr>
-                  </thead>
-
-                  <tbody className={styles.tbody}>
-                    {filtered.length === 0 ? (
-                      <tr>
-                        <td colSpan={5} className={styles.emptyCell}>
-                          <div className={styles.emptyBox}>
-                            <div className={styles.emptyTitle}>No hay coincidencias</div>
-                            <div className={styles.emptyText}>
-                              Ajusta el filtro o agrega un nuevo registro.
-                            </div>
-                          </div>
-                        </td>
-                      </tr>
-                    ) : (
-                      filtered.map((inv) => (
-                        <tr
-                          key={inv.id}
-                          className={styles.tableRow}
-                          onClick={() => setSelected(inv)}
-                          onContextMenu={(e) => openContextMenu(e, inv)}
-                          title="Click para ver detalle · Clic derecho para acciones"
-                        >
-                          <td className={styles.td}>
-                            <span className={styles.typeTag}>{inv.type ?? "—"}</span>
-                          </td>
-                          <td className={styles.td}>
-                            <div className={styles.cellTitle}>
-                              {inv.invoiceName || "Sin nombre"}
-                            </div>
-                            {inv.description ? (
-                              <div className={styles.cellDescription}>
-                                {inv.description}
-                              </div>
-                            ) : (
-                              <div className={styles.cellMuted}>Sin descripción</div>
-                            )}
-                          </td>
-                          <td className={styles.tdMuted}>
-                            {inv.date ? formatDate(inv.date) : "—"}
-                          </td>
-                          <td className={styles.tdMuted}>{inv.bank || "—"}</td>
-                          <td className={styles.tdRightMono}>
-                            {formatMoney(inv.total ?? 0)}
-                          </td>
-                        </tr>
-                      ))
-                    )}
-                  </tbody>
-
-                  <tfoot className={styles.tfoot}>
-                    <tr>
-                      <td colSpan={4} className={styles.tfootLabel}>
-                        Total registros: <span>{totalCount}</span>
-                      </td>
-                      <td className={styles.tfootValue}>{formatMoney(totalSum)}</td>
-                    </tr>
-                  </tfoot>
-                </table>
-              </div>
-            </div>
-
-            <div className={styles.tip}>
-              Tip: haz clic sobre una fila para abrir el detalle completo. Clic derecho sobre la fila para ver acciones.
-            </div>
-          </section>
+          <BillingInvoicesTable
+            filtered={filtered}
+            selectedSet={selectedSet}
+            selectedIds={selectedIds}
+            totalCount={totalCount}
+            filteredCount={filteredCount}
+            filteredSum={filteredSum}
+            totalSum={totalSum}
+            loading={loading}
+            sortLabel={sortLabel}
+            sortArrow={sortArrow}
+            sortBy={sortBy}
+            sortKeys={SORT_KEYS}
+            toggleSort={toggleSort}
+            onRowClick={handleRowClick}
+            onRowCheckboxClick={handleRowCheckboxClick}
+            onOpenContextMenu={openContextMenu}
+          />
         </main>
 
-        {showNewModal && (
-          <div role="dialog" aria-modal="true" className={styles.modalOverlay}>
-            <div className={styles.modalBackdrop} onClick={closeNewModal} />
-            <div className={styles.modalCardLarge}>
-              <div className={styles.modalHeader}>
-                <div>
-                  <div className={styles.kickerDark}>
-                    {editingInvoice ? "EDITAR REGISTRO" : "NUEVO REGISTRO"}
-                  </div>
-                  <h3 className={styles.modalTitle}>
-                    {editingInvoice ? "Editar comprobante" : "Crear comprobante"}
-                  </h3>
-                  <div className={styles.modalSubtext}>
-                    {editingInvoice
-                      ? "Modifica los datos y guarda los cambios."
-                      : "Completa los datos y guarda el registro."}
-                  </div>
-                </div>
-                <button
-                  type="button"
-                  onClick={closeNewModal}
-                  className={styles.actionButton}
-                >
-                  Cerrar
-                </button>
-              </div>
+        <BillingDialogs
+          showNewModal={showNewModal}
+          closeNewModal={closeNewModal}
+          modalCopy={modalCopy}
+          modalMode={modalMode}
+          editingInvoice={editingInvoice}
+          handleSave={handleSave}
+          showCloneConfirm={showCloneConfirm}
+          cancelClone={cancelClone}
+          confirmClone={confirmClone}
+          cloneTarget={cloneTarget}
+          selected={selected}
+          goToView={goToView}
+          handleEdit={handleEdit}
+          requestClone={requestClone}
+          handleDebitNote={handleDebitNote}
+          handleCreditNote={handleCreditNote}
+          downloadInvoice={downloadInvoice}
+          handleDelete={handleDelete}
+          closeSelected={() => setSelected(null)}
+        />
 
-              <div className={styles.modalBodyScroll}>
-                <div className={styles.formFrame}>
-                  <InvoiceForm
-                    key={editingInvoice?.id ?? "new"}
-                    onSave={handleSave}
-                    initialData={editingInvoice ?? undefined}
-                    initialValues={editingInvoice ?? undefined}
-                  />
-                </div>
-              </div>
-            </div>
-          </div>
-        )}
-
-        {manyVoucherOpen && (
-          <div role="dialog" aria-modal="true" className={styles.modalOverlay}>
-            <div
-              className={styles.modalBackdrop}
-              onClick={() => setManyVoucherOpen(false)}
-            />
-            <div className={styles.modalCardLarge}>
-              <div className={styles.modalHeader}>
-                <div>
-                  <div className={styles.kickerDark}>MANY VOUCHER</div>
-                  <h3 className={styles.modalTitle}>Formulario múltiple pendiente</h3>
-                  <div className={styles.modalSubtext}>
-                    Aquí irá el formulario para cargar varios vouchers al mismo tiempo.
-                  </div>
-                </div>
-
-                <button
-                  type="button"
-                  onClick={() => setManyVoucherOpen(false)}
-                  className={styles.actionButton}
-                >
-                  Cerrar
-                </button>
-              </div>
-
-              <div className={styles.modalBodyScroll}>
-                <div className={styles.formFrame}>
-                  <div style={{ padding: 24 }}>
-                    <p style={{ margin: 0, fontSize: 14, color: "#6b7280" }}>
-                      Formulario en desarrollo. Ya quedó listo el punto de entrada para conectar el componente de Many Voucher.
-                    </p>
-                  </div>
-                </div>
-              </div>
-            </div>
-          </div>
-        )}
-
-        {selected && (
-          <div role="dialog" aria-modal="true" className={styles.modalOverlay}>
-            <div className={styles.modalBackdrop} onClick={() => setSelected(null)} />
-            <div className={styles.modalCard}>
-              <div className={styles.modalHeader}>
-                <div className={styles.modalHeaderLeft}>
-                  <div className={styles.modalBadges}>
-                    <span className={styles.kickerDark}>DETALLE</span>
-                    <span className={styles.modalType}>{selected.type ?? "—"}</span>
-                  </div>
-                  <h3 className={styles.modalTitle}>
-                    {selected.invoiceName || "Sin nombre"}
-                  </h3>
-                  <div className={styles.modalSubtext}>
-                    {selected.date ? formatDate(selected.date) : "—"} ·{" "}
-                    {selected.bank || "—"}
-                  </div>
-                </div>
-                <div className={styles.modalActions}>
-                  <div className={styles.totalCard}>
-                    <div className={styles.totalLabel}>Total</div>
-                    <div className={styles.totalValue}>
-                      {formatMoney(selected.total ?? 0)}
-                    </div>
-                  </div>
-                  <button
-                    type="button"
-                    onClick={() => goToView(selected.id)}
-                    className={styles.actionButton}
-                  >
-                    Ver
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => handleEdit(selected)}
-                    className={styles.actionButton}
-                  >
-                    Editar
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => handleClone(selected)}
-                    className={styles.actionButton}
-                  >
-                    Clonar
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => handleDebitNote(selected)}
-                    className={styles.actionButton}
-                  >
-                    Nota débito
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => handleCreditNote(selected)}
-                    className={styles.actionButton}
-                  >
-                    Nota crédito
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => downloadInvoice(selected)}
-                    className={styles.actionButton}
-                  >
-                    Descargar
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => handleDelete(selected.id)}
-                    className={styles.dangerButton}
-                  >
-                    Eliminar
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setSelected(null)}
-                    className={styles.actionButton}
-                  >
-                    Cerrar
-                  </button>
-                </div>
-              </div>
-
-              <div className={styles.modalBody}>
-                <div className={styles.detailGrid}>
-                  <div className={styles.detailCard}>
-                    <div className={styles.detailLabel}>Monto</div>
-                    <div className={styles.detailValue}>
-                      {formatMoney(selected.amount ?? 0)}
-                    </div>
-                  </div>
-                  <div className={styles.detailCard}>
-                    <div className={styles.detailLabel}>IVA</div>
-                    <div className={styles.detailValue}>
-                      {formatMoney(selected.iva ?? 0)}
-                    </div>
-                  </div>
-                  <div className={styles.detailWide}>
-                    <div className={styles.detailLabel}>Descripción</div>
-                    <div className={styles.detailText}>
-                      {selected.description || "—"}
-                    </div>
-                  </div>
-                  <div className={styles.detailGrid3}>
-                    <div className={styles.detailCard}>
-                      <div className={styles.detailLabel}>ID</div>
-                      <div className={styles.detailMono}>{selected.id}</div>
-                    </div>
-                    <div className={styles.detailCard}>
-                      <div className={styles.detailLabel}>Banco</div>
-                      <div className={styles.detailValueSmall}>
-                        {selected.bank || "—"}
-                      </div>
-                    </div>
-                    <div className={styles.detailCard}>
-                      <div className={styles.detailLabel}>Fecha</div>
-                      <div className={styles.detailValueSmall}>
-                        {selected.date ? formatDate(selected.date) : "—"}
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            </div>
-          </div>
-        )}
-
-        {contextMenu && (
-          <div
-            style={{
-              position: "fixed",
-              left: contextMenu.x,
-              top: contextMenu.y,
-              zIndex: 9999,
-              width: 206,
-              background: "rgba(17, 24, 39, 0.96)",
-              color: "#fff",
-              border: "1px solid rgba(255,255,255,0.10)",
-              borderRadius: 12,
-              boxShadow: "0 18px 40px rgba(0,0,0,0.28)",
-              padding: 6,
-              backdropFilter: "blur(12px)",
-              overflow: "hidden",
-            }}
-            onMouseDown={(e) => e.stopPropagation()}
-            onClick={(e) => e.stopPropagation()}
-            onContextMenu={(e) => e.preventDefault()}
-          >
-            <div
-              style={{
-                fontSize: 11,
-                fontWeight: 700,
-                letterSpacing: 0.7,
-                textTransform: "uppercase",
-                padding: "6px 8px 8px",
-                opacity: 0.72,
-              }}
-            >
-              Acciones
-            </div>
-
-            <div style={{ display: "grid", gap: 2 }}>
-              {[
-                { label: "Ver", action: "view" as const },
-                { label: "Editar", action: "edit" as const },
-                { label: "Clonar", action: "clone" as const },
-                { label: "Nota débito", action: "debit" as const },
-                { label: "Nota crédito", action: "credit" as const },
-                { label: "Descargar", action: "download" as const },
-                { label: "Eliminar", action: "delete" as const, danger: true },
-              ].map((item) => (
-                <button
-                  key={item.action}
-                  type="button"
-                  onClick={() => runContextAction(item.action, contextMenu.invoice)}
-                  style={{
-                    width: "100%",
-                    textAlign: "left",
-                    padding: "8px 10px",
-                    borderRadius: 8,
-                    border: "none",
-                    background: item.danger
-                      ? "rgba(239,68,68,0.14)"
-                      : "transparent",
-                    color: item.danger ? "#fecaca" : "#fff",
-                    cursor: "pointer",
-                    fontSize: 13,
-                    lineHeight: 1.15,
-                    fontWeight: 600,
-                    letterSpacing: 0.1,
-                    margin: 0,
-                    whiteSpace: "nowrap",
-                  }}
-                >
-                  {item.label}
-                </button>
-              ))}
-            </div>
-          </div>
-        )}
+        <BillingContextMenu
+          contextMenu={contextMenu}
+          onRunContextAction={runContextAction}
+        />
       </div>
     </div>
   );
